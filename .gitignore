@@ -1,0 +1,18 @@
+# Secrets
+.env
+.env.local
+
+# Node
+node_modules/
+orchestrator/dist/
+orchestrator/mock-datastore.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
