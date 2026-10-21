@@ -1,0 +1,46 @@
+name: Night Shift
+
+on:
+  schedule:
+    # 19:00 UTC = 02:00 Asia/Bangkok (UTC+7)
+    - cron: "0 19 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run-night:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: orchestrator/package-lock.json
+
+      - name: Install dependencies
+        working-directory: orchestrator
+        run: npm ci
+
+      - name: Build
+        working-directory: orchestrator
+        run: npm run build
+
+      - name: Run night
+        working-directory: orchestrator
+        env:
+          ROBLOX_API_KEY: ***
+          UNIVERSE_ID: ***
+          LLM_BASE: ***
+          LLM_API_KEY: ***
+          LLM_MODEL: ***
+        run: |
+          export NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d)
+          echo "NIGHT=$NIGHT"
+          node dist/index.js
+
+      - name: Commit log + previews
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          file_pattern: "site/log.jsonl site/previews/*.svg"
+          commit_message: "night shift: ${{ github.run_id }}"
