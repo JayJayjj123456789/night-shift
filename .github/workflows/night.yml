@@ -29,11 +29,11 @@ jobs:
       - name: Run night
         working-directory: orchestrator
         env:
-          ROBLOX_API_KEY: ***
-          UNIVERSE_ID: ***
-          LLM_BASE: ***
-          LLM_API_KEY: ***
-          LLM_MODEL: ***
+          ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
+          UNIVERSE_ID: ${{ secrets.UNIVERSE_ID }}
+          LLM_BASE: ${{ secrets.LLM_BASE }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
         run: |
           export NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d)
           echo "NIGHT=$NIGHT"
