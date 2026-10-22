@@ -159,6 +159,8 @@ async function main() {
   console.log("");
   console.log(chainOk ? G("  overall: chain INTACT") : R("  overall: chain BROKEN"));
   console.log("");
+  // non-zero exit so CI fails fast on a broken chain
+  if (!chainOk) process.exit(2);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

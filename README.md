@@ -185,6 +185,47 @@ node dist/index.js
 
 ---
 
+## วิธีเช็คความคืบหน้า
+
+คำสั่งเดียวที่ตอบได้ว่า "ระบบยังไหวอยู่ไหม" — ไม่ต้องเดา ไม่ต้องดู log
+
+```bash
+cd orchestrator
+NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d) node dist/status.js
+```
+
+ออกผล 7 หัวข้อ: DataStore → Hash chain → Tonight → Site map → Telemetry → Public site → Schedule
+
+ตัวอย่างผลจริง:
+
+```
+1. DataStore       PASS  reachable · night=20261022 works=1 head=53822464967a18dc
+2. Hash chain      PASS  n20261022-a void hash=53822464967a18dc
+                   PASS  chain head matches state.journalHead
+3. Tonight         PASS  already ran (idempotent guard held)
+4. Site map        WARN  last form was "void" -> คืนหน้าต้องเป็นของจริง
+5. Telemetry       PASS  2026-10-22: 1 work tracked
+6. Public site     PASS  log.jsonl ตรง DataStore · มี preview ครบ
+7. Schedule        ····  next cron 2026-10-23 02:00 Bangkok
+
+  overall: chain INTACT
+```
+
+**อ่านผล:**
+
+| สัญลักษณ์ | แปลว่า | ต้องทำ |
+|---|---|---|
+| `PASS` | ปกติ | — |
+| `WARN` | ยังไม่พัง แต่สัญญาณว่าจะพัง | ดูรายละเอียดในบรรทัด WARN |
+| `FAIL` | พังจริง | แก้ก่อนคืนถัดไป |
+| `····` | ข้อมูลประกอบ | — |
+
+**exit code:** `0` = ปกติ, `2` = chain พัง, `1` = ต่อ Roblox ไม่ได้ — ใช้กับ CI ได้เลย
+
+**ทำไมต้องมี:** ระบบนี้เคย "ดูเหมือนทำงาน" ทั้งที่พังจริง 3 จุด (void ไม่มี geometry, telemetry flush ทุก 5 วินาที, นับ journal เป็นงาน) คำสั่งนี้จับได้ทั้งหมดในที่เดียว
+
+---
+
 ## ขั้นที่ 5 — GitHub Actions (cron 02:00 ไทย)
 
 **ไฟล์:** `.github/workflows/night.yml` — schedule `0 19 * * *` UTC = 02:00 Asia/Bangkok + `workflow_dispatch` กดรันมือ
@@ -230,6 +271,18 @@ jobs:
           export NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d)
           echo "NIGHT=$NIGHT"
           node dist/index.js
+
+      - name: Verify chain
+        working-directory: orchestrator
+        env:
+          ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
+          UNIVERSE_ID: ${{ secrets.UNIVERSE_ID }}
+          LLM_BASE: ${{ secrets.LLM_BASE }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+        run: |
+          export NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d)
+          node dist/status.js
 
       - name: Commit log + previews
         uses: stefanzweifel/git-auto-commit-action@v5
@@ -348,6 +401,7 @@ jobs:
 - [x] ปิด key → hesitate ไม่ crash
 - [x] Startup rebuild ทุกชิ้นจาก ns:state
 - [x] หน้าเว็บ Pages + hash chain verify (client-side)
+- [x] `npm run status` — เช็คความคืบหน้า 7 หัวข้อในคำสั่งเดียว (exit 2 = chain พัง)
 - [ ] **30 คืนติด** ตามสเปค — วัดจาก cron รันตรง
 
 ---
@@ -359,4 +413,6 @@ jobs:
 | `401 Invalid API Key` | ใช้แค่ 48-chars baseApiKey หรือ key หมดอายุ | ใช้ full 964 chars; copy ใหม่จาก dashboard |
 | `403 missing universe-datastores.control:create` | scope ไม่ครบ | tick `control:create` |
 | `404 Data store not found` | store ยังว่าง (คืนแรก) | ปกติ — auth ผ่านแล้ว |
+| `chain BROKEN` (status exit 2) | hash ไม่ตรงกับ payload หรือ `prevHash` ขาด link | ดูบรรทัด FAIL — มันบอกชิ้นไหนพัง (`n2026xxxx-a`) |
+| `no telemetry in the last 7 days` | ไม่มีผู้เข้าเกม หรือ work ไม่มี geometry | เปิดเกม + ยืนใกล้งาน >15 วินาที แล้วรอ flush (~1 นาที) |
 | YAML workflow parse error | `${{ secrets.X }}` โดน censor เป็น `***` | เขียนผ่าน execute_code/python |
