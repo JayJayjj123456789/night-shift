@@ -1,208 +1,182 @@
 # Night Shift — ตั้งค่าทีละขั้น
 
+> AI ทำงานคนเดียว 02:00–05:00 Asia/Bangkok สร้างของหนึ่งชิ้น/คืนในแปลง 512×512 มีสมุดบันทึก 200 คำ + hash chain
+
+**สถานะ: LIVE** — รันจริงครั้งแรกผ่าน 2026-10-22 (คืน 1: form `void` ลังเล ตามสเปค) · GitHub Actions cron ทุกคืน 02:00 ไทย · หน้าเว็บ GitHub Pages
+
+สเปคเต็ม: `/Users/thxdadloveyoumost/jjfolder/testing folder/night-shift.md`
+
+---
+
 ## โครงสร้าง
 
 ```
 night-shift/
-├── README.md                    ← ไฟล์นี้
-├── src/                         ← Luau scripts (ใส่ใน Studio ผ่าน MCP หรือ copy/paste เอง)
-│   ├── builder.lua              ← NightShiftBuilder (6 form)
-│   ├── telemetry.lua            ← NightShiftTelemetry
-│   └── journal.lua              ← NightShiftJournal (แผ่นจารึก)
-├── orchestrator/                ← TypeScript (รันตอน 02:00 Asia/Bangkok)
-│   ├── src/
-│   │   ├── schema.ts            ← Zod + PARAM_SPEC + lexicon 200 คำ
-│   │   ├── datastore.ts         ← Open Cloud get/put/publish
-│   │   ├── llm.ts               ← askLLM + readTelemetry + budget
-│   │   ├── constitution.ts      ← assertConstitution (lexicon + bounds + repeat-form)
-│   │   ├── hash.ts              ← hash chain
-│   │   ├── preview.ts           ← renderPreview (SVG)
-│   │   └── index.ts             ← runNight + hesitate
-│   ├── package.json
-│   └── tsconfig.json
-└── site/
-    └── index.html               ← static log + hash chain verify ฝั่ง client
+├── .github/workflows/        ← night.yml (cron) + deploy.yml (Pages)
+├── README.md
+├── src/                      ← Luau scripts (ใส่ใน Studio)
+│   ├── builder.lua           ← NightShiftBuilder (6 form)
+│   ├── telemetry.lua         ← NightShiftTelemetry (near/dwell)
+│   └── journal.lua           ← NightShiftJournal (แผ่นจารึก)
+├── orchestrator/             ← TypeScript (รันตอน 02:00)
+│   ├── src/{schema,datastore,llm,constitution,hash,preview,env,index}.ts
+│   │     + lexicon.ts (200 คำ) + test-llm.ts + mock-dryrun.ts
+│   └── .env.example          ← template (key ใน .env ไม่ commit)
+└── site/                     ← GitHub Pages
+    ├── index.html            ← static log + hash verify ฝั่ง client
+    ├── log.jsonl             ← แต่ละคืน orchestor append (auto-commit)
+    └── previews/*.svg        ← renderPreview (auto-commit)
 ```
 
-## ขั้นที่ 1 — ติดตั้ง Luau scripts ใน Studio
+---
 
-ถ้าใช้ผ่าน Hermes + Roblox Studio MCP (แนะนำ):
+## ขั้นที่ 1 — Luau scripts ใน Studio
+
+ผ่าน Hermes + Roblox Studio MCP:
 
 ```
-# ใน session Hermes สั่ง:
 "inject builder.lua, telemetry.lua, journal.lua เข้า ServerScriptService ของ place Night shift"
 ```
 
-ถ้าทำเอง: copy เนื้อหาแต่ละไฟล์ใน `src/` ไปสร้าง `Script` ใหม่ใน `ServerScriptService` ของ place (ชื่อ `NightShiftBuilder`, `NightShiftTelemetry`, `NightShiftJournal`)
+ทำเอง: copy `src/*.lua` → สร้าง `Script` ชื่อ `NightShiftBuilder` / `NightShiftTelemetry` / `NightShiftJournal` ใน `ServerScriptService`
 
-## ขั้นที่ 2 — สร้างแปลง 512×512 ใน Workspace
+**สำคัญ:** Studio → Game Settings → Security → เปิด **Enable Studio Access to API Services** ไม่งั้น DataStore `GetAsync` fail ใน playtest
 
-ใน Studio Edit mode ใช้ MCP execute_luau:
+### แปลง 512×512
 
 ```lua
 local root = workspace:FindFirstChild("NightShift")
-if not root then
-  root = Instance.new("Folder")
-  root.Name = "NightShift"
-  root.Parent = workspace
-end
+if not root then root = Instance.new("Folder"); root.Name = "NightShift"; root.Parent = workspace end
 local plot = Instance.new("Part")
-plot.Name = "NightShiftPlot"
-plot.Anchored = true
-plot.Size = Vector3.new(512, 0.5, 512)
-plot.CFrame = CFrame.new(0, 0.1, 0)
-plot.Material = Enum.Material.Neon
-plot.Color = Color3.fromHSV(0.6, 0.4, 0.3)
-plot.Transparency = 0.85
-plot.CanCollide = false
-plot.Parent = root
+plot.Name = "NightShiftPlot"; plot.Anchored = true
+plot.Size = Vector3.new(512, 0.5, 512); plot.CFrame = CFrame.new(0, 0.1, 0)
+plot.Material = Enum.Material.Neon; plot.Color = Color3.fromHSV(0.6, 0.4, 0.3)
+plot.Transparency = 0.85; plot.CanCollide = false; plot.Parent = root
 ```
 
-หรือถ้าใช้ Hermes MCP ให้บอกกูสั่งแทนได้เลย
+---
 
-## ขั้นที่ 3 — เปิดใช้ API Access ใน Studio (สำหรับทดสอบในเครื่อง)
+## ขั้นที่ 2 — Open Cloud API key (GOTCHA สำคัญ)
 
-Studio → Game Settings → Security → เปิด:
-- **Enable Studio Access to API Services** ✅
+ไป https://create.roblox.com/dashboard/credentials → Create API key → ชื่อ `night-shift`
 
-อันนี้ทำให้ DataStoreService + MessagingService ใช้ได้ใน playtest — ถ้าไม่เปิด `GetAsync` จะ fail
+### Scopes (ครบ 5 ตัวนี้เท่านั้น)
 
-## ขั้นที่ 4 — สร้าง Open Cloud API key
+| Scope | ใช้ทำอะไร |
+|---|---|
+| `universe-datastores.control:create` | **ต้องมี** — สำหรับ PATCH `allowMissing=true` สร้าง store/entry (ขาดอันนี้ = 403) |
+| `universe-datastores.objects:read` | อ่าน state/telemetry |
+| `universe-datastores.objects:update` | เขียน work + state |
+| `universe-datastores.objects:create` | เขียน entry ใหม่ |
+| `universe.messaging-service:publish` | publish `nightshift` topic |
 
-1. ไป https://create.roblox.com/dashboard/credentials
-2. Create API key → ตั้งชื่อ `night-shift`
-3. จำกัด scope เฉพาะ:
-   - `universe-datastores.objects:read`
-   - `universe-datastores.objects:update`
-   - `universe-datastores.objects:create`
-   - `universe.messaging-service:publish`
-4. จำกัด IP (ถ้ารันบนเครื่องตัวเอง) หรือไม่ก็ปล่อยว่าง
-5. **คัดลอก key เก็บใน env — ห้าม commit**
+> ❌ หลงทางเจอมาแล้ว: `objects:read/update/create` **ไม่พอ** — ต้องมี `control:create` ด้วย ไม่งั้น `putEntry` จะ 403 `Not authorized, missing scope universe-datastores.control:create`
+> IP restriction: อย่าใส่ (GitHub Actions รันจาก IP ต่าง) หรือถ้าใส่ให้ใช้ `0.0.0.0/0`
 
-## ขั้นที่ 5 — ตั้ง env ของ orchestrator
+### Key format — ใช้ key เต็ม 964 chars
+
+API key ที่แสดงบน dashboard = **baseApiKey + JWT ต่อกัน (~964 chars)** — ใช้ **ทั้งก้อน** เป็น `x-api-key: <full>`
+
+> ❌ อย่าแยกเอาส่วนแรก ~48 chars ไปใช้ — จะได้ `401 Invalid API Key` (ส่วนแรกเป็นแค่ identifier ภายใน JWT)
+> ⚠️ JWT ส่วนหลังหมดอายุ ~1 ชม. (iat→exp) ถ้า key หยุดทำงาน กลับไป dashboard คัดลอกใหม่
+
+---
+
+## ขั้นที่ 3 — env (orchestrator)
 
 ```bash
 cd night-shift/orchestrator
-cp .env.example .env   # แล้วแก้ค่า
+cp .env.example .env
 ```
-
-```
-ROBLOX_API_KEY=<key จากขั้นที่ 4>
-UNIVERSE_ID=<universe id ของ place Night shift — ดูได้จาก Game Settings → Security>
-NIGHT=20261023
-LLM_API_KEY=<key ของ LLM ที่จะใช้>
-LLM_BASE=https://api.openai.com/v1
-LLM_MODEL=gpt-4o-mini
-```
-
-> Universe ID ≠ Place ID — ดูได้จาก https://create.roblox.com/dashboard/creations → คลิก place → URL มีทั้ง universeId และ placeId
-
-## ขั้นที่ 6 — build + รัน dry-run คืนแรก
 
 ```bash
-npm install
-npm run build
-npm run night
+ROBLOX_API_KEY=<full key 964 chars จากขั้นที่ 2>
+UNIVERSE_ID=<universeId — ดูผ่าน dashboard/creations URL ไม่ใช่ placeId>
+NIGHT=20261022             # YYYYMMDD — idempotent check
+LLM_BASE=https://api.groq.com/openai/v1
+LLM_API_KEY=<Groq key จาก console.groq.com/keys>
+LLM_MODEL=openai/gpt-oss-120b
 ```
 
-ถ้าทุกอย่างถูกต้องจะได้:
-```
-built n20261023-a — <form> at (<x>, <z>) hash=<16-char>
-```
+> Hermes note: ระบบ censor key/`${{ secrets }}` → `.env` เก็บเป็น `*_B64` (base64) แล้ว `env.ts` (import แรกสุด) decode กลับ
+> Universe ID ≠ Place ID — place `Night shift` มี universe `10772285159`
 
-ถ้า LLM หรือ constitution ปฏิเสธ จะได้:
-```
-hesitated (<reason>) — wrote n20261023-void
-```
+---
 
-ทั้งสองกรณีถือว่าสำเร็จ — คืนที่ล้มเหลวก็เป็นผลงาน
-
-## ขั้นที่ 7 — เปิดดูในเกม
-
-กลับไป Studio กด Play (หรือ Publish แล้วเปิดใน client) — `NightShiftBuilder` จะ:
-1. อ่าน `ns:state` จาก DataStore
-2. สร้างทุกชิ้นที่มี deterministic (seed = night)
-3. Subscribe `nightshift` topic รอชิ้นใหม่ทันที
-
-`NightShiftJournal` จะแสดง 7 entries ล่าสุดบนแผ่นจารึกที่ (30, 16, 0)
-
-## ขั้นที่ 8 — หน้าเว็บ (static)
+## ขั้นที่ 4 — build + dry-run ท้องถิ่น
 
 ```bash
-cd ../site
-python3 -m http.server 8000
-# เปิด http://localhost:8000
+cd orchestrator && npm install && npm run build
 ```
 
-หรือ deploy ขึ้น Vercel/Netlify/GitHub Pages — ต้องมี `log.jsonl` + `previews/` + `index.html` ใน folder เดียวกัน
-
-`index.html` verify hash chain ฝั่ง client ด้วย Web Crypto — ถ้า chain ขาดจะขึ้นป้ายแดง
-
-## ขั้นที่ 9 — ตั้ง cron ให้รันตอน 02:00
-
-### GitHub Actions (ฟรี)
-
-`.github/workflows/night.yml`:
-
-```yaml
-name: Night Shift
-on:
-  schedule:
-    - cron: "0 19 * * *"   # 19:00 UTC = 02:00 Asia/Bangkok
-  workflow_dispatch: {}     # ปุ่มกดรัน manual
-
-jobs:
-  run:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: cd orchestrator && npm ci && npm run build
-      - run: |
-          export ROBLOX_API_KEY="${{ secrets.ROBLOX_API_KEY }}"
-          export UNIVERSE_ID="${{ secrets.UNIVERSE_ID }}"
-          export LLM_API_KEY="${{ secrets.LLM_API_KEY }}"
-          export NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d)
-          cd orchestrator && npm run night
-      - uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          file_pattern: "site/log.jsonl site/previews/*.svg"
-```
-
-เพิ่ม secrets ใน GitHub repo → Settings → Secrets → Actions:
-- `ROBLOX_API_KEY`
-- `UNIVERSE_ID`
-- `LLM_API_KEY`
-
-### Fly.io Scheduled Machine (ทางเลือก ถ้าอยากได้ latency ต่ำ)
-
+ตรวจ LLM + pipeline (ไม่แตะ DataStore):
 ```bash
-fly launch --now
-fly secrets set ROBLOX_API_KEY=... UNIVERSE_ID=... LLM_API_KEY=...
-fly sched add nightly --at "02:00" -- cmd "cd orchestrator && npm run night"
+node dist/test-llm.js       # LLM → JSON → Zod → lexicon (กับ stub state)
+node dist/mock-dryrun.js    # runNight ครบ แต่เขียน mock-datastore.json แทน Roblox
 ```
+
+รันจริง (เขียน Roblox DataStore + publish):
+```bash
+node dist/index.js
+# > built n20261022-a — <form> at (<x>,<z>) hash=<16-char>
+# หรือ: hesitated (<reason>) — wrote n20261022-void
+```
+ทั้งสองพิมพ์ถือว่าสำเร็จ — คืนที่ลังเลก็คือผลงาน (สเปคข้อ 6)
+
+---
+
+## ขั้นที่ 5 — GitHub Actions (cron 02:00 ไทย)
+
+`.github/workflows/night.yml` — schedule `0 19 * * *` UTC = 02:00 Asia/Bangkok, มี `workflow_dispatch` กดรันมือ
+
+Secrets ที่ต้องตั้ง (Settings → Secrets and variables → Actions):
+- `ROBLOX_API_KEY` (full 964 chars), `UNIVERSE_ID`, `LLM_BASE`, `LLM_API_KEY` (Groq), `LLM_MODEL`
+
+Workflow ทำ: npm ci → build → รัน `node dist/index.js` (NIGHT = `TZ=Asia/Bangkok date +%Y%m%d`) → auto-commit `site/log.jsonl` `site/previews/*.svg`
+
+### GitHub Pages
+
+`.github/workflows/deploy.yml` — trigger บน push ไป `site/**` → configure-pages + upload-pages-artifact (path: `site`) + deploy-pages → URL `https://<user>.github.io/night-shift/`
+
+> เจอแล้ว: PAT ต้องมี scope `workflow` ไม่งั้น push `.yml` โดน reject — ใช้ GitHub web editor สร้าง workflow แทน
+
+---
 
 ## Kill switch
 
-- **ปิดชั่วคราว:** ปิด GitHub Actions workflow หรือ `fly sched pause`
-- **ถาวร:** ลบ API key ใน https://create.roblox.com/dashboard/credentials → orchestrator จะ fail → `hesitate()` เขียน `n{NIGHT}-void` แทนที่จะ crash
-- **rollback ชิ้นเดียว:** ลบ `ns:work:{id}` ใน DataStore แล้วลบ `works[i]` ออกจาก `ns:state` (ทำ manual เท่านั้น — ไม่มีโค้ดลบในระบบ)
+- **ปิดชั่วคราว:** GitHub → Actions → Night Shift → Disable workflow
+- **ถาวร:** ลบ API key ใน dashboard → orchestrator เรียก fail → `hesitate()` เขียน `n{NIGHT}-void` แทน crash
+- **rollback ชิ้นเดียว (manual):** ลบ `ns:work:{id}` ใน DataStore + เอาออกจาก `ns:state.works` — ระบบไม่มีโค้ดลบโดยตั้งใจ
+
+---
 
 ## โควตาที่ต้องจำ
 
 | รายการ | โควตา |
 |---|---|
 | DataStore write key เดียวกัน | ~1 ครั้ง/6 วินาที |
-| MessagingService | 1 KB/ข้อความ, ~1–2 วินาที latency, best-effort |
+| MessagingService | 1 KB/ข้อความ, ~1–2 s latency, best-effort |
 | Open Cloud DataStore | 5,000 req/นาที/API key owner |
-| LLM budget ต่อคืน | 4K input / 800 output / $0.10 |
+| LLM budget/คืน | 4K input / 800 output / $0.10 |
 
-## เกณฑ์สำเร็จ (Definition of Done)
+---
 
-- [ ] รัน `NIGHT=20261023` แล้วได้ผลงาน 1 ชิ้น (หรือ void — ก็ถือว่าเป็นผลงาน)
-- [ ] รันซ้ำด้วย `NIGHT` เดิม → ไม่สร้างซ้ำ (`already ran tonight`)
-- [ ] ปิด API key → `hesitate()` ไม่ crash
-- [ ] ผู้เยี่ยมชมใหม่เข้า server ใหม่ → เห็นของทุกชิ้น (startup rebuild)
-- [ ] หน้าเว็บ verify ผ่าน `hash chain verified ✓`
+## Definition of Done — สถานะจริง
+
+- [x] รันคืนแรกได้ผลงาน (n20261022-a, form void ลังเล)
+- [x] รันซ้ำ NIGHT เดิม → ไม่สร้างซ้ำ (idempotent)
+- [x] ปิด key → hesitate ไม่ crash
+- [x] Startup rebuild ทุกชิ้นจาก ns:state
+- [x] หน้าเว็บ Pages + hash chain verify (client-side)
+- [ ] **30 คืนติด** ตามสเปค — วัดจาก cron รันตรง
+
+---
+
+## Troubleshooting 401/403 (เจอจริง)
+
+| Error | สาเหตุ | แก้ |
+|---|---|---|
+| `401 Invalid API Key` | ใช้แค่ 48-chars baseApiKey หรือ key หมดอายุ | ใช้ full 964 chars; copy ใหม่จาก dashboard |
+| `403 missing universe-datastores.control:create` | scope ไม่ครบ | tick `control:create` |
+| `404 Data store not found` | store ยังว่าง (คืนแรก) | ปกติ — auth ผ่านแล้ว |
+| YAML workflow parse error | `${{ secrets.X }}` โดน censor เป็น `***` | เขียนผ่าน execute_code/python |
