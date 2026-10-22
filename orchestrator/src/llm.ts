@@ -47,9 +47,12 @@ const ASKED_SITE_DISTANCE = 60;
 
 export async function readTelemetry(state: State): Promise<Attention[]> {
   const days: string[] = [];
-  const now = new Date(getNight().toString().replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3"));
+  // The key format MUST match what src/telemetry.lua writes: os.date("!%Y-%m-%d")
+  // -> "ns:telemetry:2026-10-22". Using YYYYMMDD here silently reads nothing, so
+  // the prompt got an empty attention list every single night.
+  const base = new Date(`${getNight().toString().replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3")}T00:00:00Z`);
   for (let i = 0; i < 7; i++) {
-    const d = new Date(now);
+    const d = new Date(base);
     d.setUTCDate(d.getUTCDate() - i);
     days.push(d.toISOString().slice(0, 10));
   }
@@ -60,8 +63,8 @@ export async function readTelemetry(state: State): Promise<Attention[]> {
     if (!t) continue;
     for (const [id, v] of Object.entries(t)) {
       const a = aggregate[id] ?? { near: 0, dwell: 0 };
-      a.near += v.near;
-      a.dwell += v.dwell;
+      a.near += v.near ?? 0;
+      a.dwell += v.dwell ?? 0;
       aggregate[id] = a;
     }
   }
