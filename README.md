@@ -127,20 +127,140 @@ node dist/index.js
 
 ## ขั้นที่ 5 — GitHub Actions (cron 02:00 ไทย)
 
-`.github/workflows/night.yml` — schedule `0 19 * * *` UTC = 02:00 Asia/Bangkok, มี `workflow_dispatch` กดรันมือ
+**ไฟล์:** `.github/workflows/night.yml` — schedule `0 19 * * *` UTC = 02:00 Asia/Bangkok + `workflow_dispatch` กดรันมือ
 
-Secrets ที่ต้องตั้ง (Settings → Secrets and variables → Actions):
-- `ROBLOX_API_KEY` (full 964 chars), `UNIVERSE_ID`, `LLM_BASE`, `LLM_API_KEY` (Groq), `LLM_MODEL`
+```yaml
+name: Night Shift
 
-Workflow ทำ: npm ci → build → รัน `node dist/index.js` (NIGHT = `TZ=Asia/Bangkok date +%Y%m%d`) → auto-commit `site/log.jsonl` `site/previews/*.svg`
+on:
+  schedule:
+    # 19:00 UTC = 02:00 Asia/Bangkok (UTC+7)
+    - cron: "0 19 * * *"
+  workflow_dispatch: {}
 
-### GitHub Pages
+jobs:
+  run-night:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-`.github/workflows/deploy.yml` — trigger บน push ไป `site/**` → configure-pages + upload-pages-artifact (path: `site`) + deploy-pages → URL `https://<user>.github.io/night-shift/`
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: orchestrator/package-lock.json
 
-> เจอแล้ว: PAT ต้องมี scope `workflow` ไม่งั้น push `.yml` โดน reject — ใช้ GitHub web editor สร้าง workflow แทน
+      - name: Install dependencies
+        working-directory: orchestrator
+        run: npm ci
 
----
+      - name: Build
+        working-directory: orchestrator
+        run: npm run build
+
+      - name: Run night
+        working-directory: orchestrator
+        env:
+          ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
+          UNIVERSE_ID: ${{ secrets.UNIVERSE_ID }}
+          LLM_BASE: ${{ secrets.LLM_BASE }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+        run: |
+          export NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d)
+          echo "NIGHT=$NIGHT"
+          node dist/index.js
+
+      - name: Commit log + previews
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          file_pattern: "site/log.jsonl site/previews/*.svg"
+          commit_message: "night shift: ${{ github.run_id }}"
+```
+
+สิ่งที่แต่ละ step ทำ:
+
+| Step | ทำอะไร | ถ้าพัง |
+|---|---|---|
+| `checkout` | ดึงโค้ด repo | — |
+| `setup-node` | Node 20 + npm cache (key = package-lock.json) | เปลี่ยน `cache-dependency-path` ถ้า yml ย้ายที่ |
+| `npm ci` | install ตาม lockfile แม่นๆ | lockfile เก่า → `npm install` แล้ว commit lock ใหม่ |
+| `npm run build` | `tsc` → `dist/*.js` | TS error — รัน `npx tsc` ท้องถิ่นก่อน |
+| `Run night` | export `NIGHT` เป็นวันที่ไทย แล้วรัน orchestrator | 401/403 → key issue; LLM error → quota |
+| `git-auto-commit` | push `site/log.jsonl` + `previews/*.svg` กลับเข้า repo | ใช้ `GITHUB_TOKEN` default อย่าแก้ |
+
+**NIGHT idempotent** — ถ้า cron รันซ้ำในคืนเดิม (หรือกด manual ซ้ำ) orchestrator เห็น `ns:work:n{NIGHT}-*` มีแล้ว → ไม่สร้างของใหม่ แค่ skip ทักทาย
+
+**Secrets ที่ต้องตั้ง** (Settings → Secrets and variables → Actions):
+
+| Secret | ค่า | หมายเหตุ |
+|---|---|---|
+| `ROBLOX_API_KEY` | full key 964 chars | ต้องมี scope `control:create` ด้วย |
+| `UNIVERSE_ID` | `10772285159` | ไม่ใช่ placeId |
+| `LLM_BASE` | `https://api.groq.com/openai/v1` | |
+| `LLM_API_KEY` | `gsk_...` | Groq free tier |
+| `LLM_MODEL` | `openai/gpt-oss-120b` | Groq ถอด llama ออกแล้ว |
+
+> ⚠️ workflow_dispatch + cron ต่างกัน: cron เป็น "at most" — ถ้า GitHub Actions ค้าง/ล่าช้า อาจเลื่อนไปไม่ถึง 1 ชม. ถ้าต้องการแม่นยำขั้นสุดให้ยืดช่วงเป็น `0 19 * * *` → `55 18 * * *` (03:00) เพื่อกัน botched
+
+### GitHub Pages — `.github/workflows/deploy.yml`
+
+```yaml
+name: Deploy Site to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+```
+
+**หน้าที่ของแต่ละ block:**
+
+- `on.push.paths: site/**` — trigger เฉพาะเมื่อ night.yml commit `site/log.jsonl` + `previews/*.svg` กลับ (ไม่ deploy ทั้ง repo)
+- `permissions: pages: write, id-token: write` — **บังคับ** สำหรับ deploy-pages@v4 (OIDC auth ไม่มี PAT)
+- `concurrency: group: pages` — กัน deploy ซ้อนกัน; `cancel-in-progress: false` = ถ้ามี deploy ค้างอยู่ รอให้จบก่อน
+- `environment: github-pages` — ใส่สถานะ deploy ตรงหน้า repo Environments tab
+- `url: steps.deployment.outputs.page_url` — auto-fill URL หลัง deploy
+
+**ต้องตั้ง Pages ครั้งเดียว:** Settings → Pages → Source: **GitHub Actions** (ไม่ใช่ "Deploy from a branch") — ไม่งั้น deploy.yml รันแล้วไม่มีอะไรเกิดขึ้น
+
+> เจอแล้ว: PAT ต้องมี scope `workflow` ไม่งั้น push `.github/workflows/*.yml` โดน reject — ใช้ GitHub web editor สร้าง workflow แทน (วิธีที่ dj ทำสำเร็จ)
+
+> เจอแล้ว: `${{ secrets.X }}` ใน workflow ถ้าไปโผล่ในโค้ดที่ commit ผ่าน tool ที่ censor จะกลายเป็น `***` → YAML parse error. แก้ด้วย: สร้าง workflow ผ่าน GitHub web editor (หรือเขียนไฟล์ผ่าน execute_code ที่ไม่โดน censor)
+
 
 ## Kill switch
 
