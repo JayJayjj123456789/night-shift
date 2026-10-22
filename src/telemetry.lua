@@ -21,7 +21,14 @@ task.spawn(function()
       if not hrp then continue end
 
       for _, model in ipairs(root:GetChildren()) do
-        if model:IsA("Model") then
+        -- only real works: id pattern n{NIGHT}-x (e.g. n20261022-a), and must have
+        -- geometry to measure against. Skips NightShiftJournal and empty models.
+        if model:IsA("Model") and string.match(model.Name, "^n%d+%-%a") then
+          local hasPart = false
+          for _, d in ipairs(model:GetDescendants()) do
+            if d:IsA("BasePart") then hasPart = true break end
+          end
+          if not hasPart then continue end
           local d = (hrp.Position - model:GetPivot().Position).Magnitude
           if d <= 30 then
             local row = acc[date][model.Name] or { near = 0, dwell = 0 }
@@ -34,11 +41,15 @@ task.spawn(function()
     end
 
     -- flush once per minute to avoid hammering DataStore write quota
-    if tonumber(os.date("!%M")) % 1 == 0 then
+    -- (os.date("!%M") is the minute-of-hour 0..59 — %1 == 0 is always true, so track seconds too)
+    local sec = tonumber(os.date("!%S"))
+    if sec < 6 and next(acc) then
       for d, works in pairs(acc) do
-        pcall(function()
-          store:SetAsync("ns:telemetry:" .. d, works)
-        end)
+        if next(works) then
+          pcall(function()
+            store:SetAsync("ns:telemetry:" .. d, works)
+          end)
+        end
       end
     end
   end

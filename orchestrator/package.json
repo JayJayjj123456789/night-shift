@@ -5,7 +5,9 @@
   "type": "commonjs",
   "scripts": {
     "build": "tsc",
-    "night": "node dist/index.js"
+    "night": "node dist/index.js",
+    "status": "node dist/status.js",
+    "test": "node dist/status.js"
   },
   "dependencies": {
     "zod": "^3.22.0"

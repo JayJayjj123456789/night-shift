@@ -152,7 +152,21 @@ function FORMS.light(model, p)
   light.Parent = beacon
 end
 
-function FORMS.void() end
+-- void still leaves a marker: an empty plot should show *something* (and telemetry
+-- needs at least one BasePart to measure a distance against).
+function FORMS.void(model, p)
+  local marker = Instance.new("Part")
+  marker.Name = "VoidMarker"
+  marker.Anchored = true
+  marker.CanCollide = false
+  marker.Transparency = 0.55
+  marker.Size = Vector3.new(4, 4, 4)
+  marker.Shape = Enum.PartType.Ball
+  marker.CFrame = CFrame.new(0, 2, 0)
+  marker.Material = Enum.Material.Glass
+  marker.Color = Color3.fromRGB(120, 120, 130)
+  marker.Parent = model
+end
 
 local function validateParams(form, params)
   local spec = SPEC[form]
