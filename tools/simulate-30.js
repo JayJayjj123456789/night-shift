@@ -45,12 +45,15 @@ const JOURNALS = [
   "near=177 dwell=903 players=2",
 ];
 
-// Start the sim chain from the REAL latest work's hash so forms/sites chain
-// plausibly; but we deliberately put the sim in its own file so the real
-// log.jsonl head is never touched.
+// The sim is a what-if: 30 consecutive nights as a self-contained chain
+// starting from genesis (NOT extending the real logged head). That way the
+// sim page (timeline.html?src=sim.jsonl) verifies as a clean 30-night chain
+// on its own, while the real log.jsonl chain is never touched by it.
+// (ceiling: if we ever want the two timelines to share one head, seed this
+//  from the real last hash and merge — revisit if requested.)
 const realLog = path.join(SITE, "log.jsonl");
-const realEntries = fs.readFileSync(realLog, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse);
-let prev = realEntries[realEntries.length - 1].hash;
+const realEntries = JSON.parse("[]"); // sim stands alone; log.jsonl left untouched
+let prev = realEntries[realEntries.length - 1] ? realEntries[realEntries.length - 1].hash : "genesis";
 
 // Site allocation: scatter on a 512x512 grid, avoid origin (0,0) and (100,80).
 const taken = new Set(realEntries.map((e) => `${e.site.x},${e.site.z}`));
