@@ -8,6 +8,64 @@
 
 ---
 
+## ภาพรวมระบบ
+
+```text
+┌──────────────────────────────┐           ┌──────────────────────────────┐              ┌────────────────────────────────┐
+│ 1. GitHub Actions            │node dist/ │ 2. orchestrator / index.js   │PATCH         │ 6. Roblox Open Cloud           │
+│ night.yml, cron 0 19 * *     │index.js   │ node 20, NIGHT=YYYYMMDD TH   │ns:state      │ DataStore NightShift_v1        │
+│ = 02:00 Asia/Bangkok         │──────────▶│ idempotent: existing->skip   │─────────────▶│ ns:state  ns:work:{id}         │
+│ manual: workflow_dispatch    │           │ reads telemetry 7 days       │              │ ns:journal  ns:telemetry       │
+└──────────────────────────────┘           └──────────────────────────────┘              └────────────────────────────────┘
+               │                                          │ POST /v1/chat                                │ on change
+               │                                          │ completions                                  │ from ns:state
+               │  npm ci / build                          ▼                                              ▼
+               │  node                     ┌──────────────────────────────┐              ┌────────────────────────────────┐
+               │  dist/index.js            │ askLLM                       │              │ publishMessage                 │
+               │                           │ Groq openai/gpt-oss-120b     │◀──┘          │ topic 'nightshift' (bus)       │
+               │                           │ budget 4K in / 800 out       │   │          └────────────────────────────────┘
+               │                           └──────────────────────────────┘   │ telemetry                │ MessagingSvc
+               │                                          │ raw JSON          │7-day feed                ▼
+               │                                          ▼                   ▲          ┌────────────────────────────────┐
+               │                           ┌──────────────────────────────┐   │          │ Studio place 'Night shift'     │
+               │                           │ 3. constitution (Zod+rules)  │   │          │ builder.lua  6 forms           │
+               │                           │ 6 forms / lexicon 200 words  │   ───────────┤ telemetry.lua near/dwell 5s    │
+               │                           │ bounds, no-collision         │              │ journal.lua  7 entries         │
+               │                           │ no repeat-form               │              └────────────────────────────────┘
+               │                           └──────────────────────────────┘                              │ rebuild on boot
+               │                                          │ canonical                                    ▼
+               │                                          ▼                              ┌────────────────────────────────┐
+               │                           ┌──────────────────────────────┐              │ plot 512 x 512                 │
+               │                           │ sha256(night,title,form,x,z) │              │ monolith garden machine        │
+               │                           │ prev -> journalHead 16hex    │              │ text light void                │
+               │                           └──────────────────────────────┘              └────────────────────────────────┘
+               │                                          │ journalHead
+               ▼                                          ▼
+┌──────────────────────────────┐log.jsonl  ┌──────────────────────────────┐
+│ git-auto-commit              │previews   │ pass -> n{NIGHT}-a (real)    │
+│ site/log.jsonl + previews/   │◀──────────│ fail -> hesitate() -> void   │
+└──────────────────────────────┘           │ hesitate is still a result   │
+               │  push                     └──────────────────────────────┘
+               ▼
+┌──────────────────────────────┐
+│ 4. deploy.yml (Pages)        │
+│ on push site/** -> Pages     │
+│ Pages source = Actions       │
+└──────────────────────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│ 5. GitHub Pages              │
+│ jayjayjj123456789.github.io  │
+└──────────────────────────────┘
+```
+
+**อ่านทิศทาง:** ทุกคืน 02:00 ไทย GitHub Actions เรียก orchestrator → orchestrator ถาม LLM → ผ่าน constitution → คำนวณ hash → เขียน DataStore + publish → Studio สร้างของจริงในแปลง 512×512 → orchestrator commit log + preview → deploy.yml ขึ้น GitHub Pages
+
+**ลูกศรย้อนกลับ (ขวาล่าง):** `telemetry.lua` เก็บ near/dwell ของผู้เล่น → `ns:telemetry` → orchestrator อ่านย้อนหลัง 7 วัน → ป้อนกลับเข้า `askLLM` เป็นบริบท (AI เรียนรู้จากคืนก่อน ๆ)
+
+---
+
 ## โครงสร้าง
 
 ```
