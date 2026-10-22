@@ -90,6 +90,12 @@ const FORM_COLOR = {
   void:     '#64748b',
 };
 
+// Which dataset to render. Default is the real nightly log; pass ?src=sim.jsonl
+// to preview the 30-night simulation (written by tools/simulate-30.js).
+const SRC = new URLSearchParams(location.search).get('src') || 'log.jsonl';
+const PREVIEW_DIR = SRC === 'sim.jsonl' ? 'sim-preview' : 'previews';
+document.title += SRC === 'sim.jsonl' ? ' (SIM 30 nights)' : '';
+
 async function sha256Hex(str) {
   const buf = new TextEncoder().encode(str);
   const hash = await crypto.subtle.digest('SHA-256', buf);
@@ -111,7 +117,7 @@ function fmt(n){ return Number(n).toLocaleString(); }
 
 async function main() {
   const status = document.getElementById('status');
-  const logRes = await fetch('log.jsonl');
+  const logRes = await fetch(SRC);
   const text = await logRes.text();
   const entries = text.trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
   entries.sort((a,b) => a.night - b.night || (a.id < b.id ? -1 : 1));
@@ -233,7 +239,7 @@ async function main() {
       <div class="title">${e.title}</div>
       <div class="journal">${e.journal}</div>
       <div class="hash">prev=${e.prevHash} → hash=${e.hash}</div>
-      <img src="previews/${e.id}.svg" width="80" height="80" onerror="this.style.display='none'" />
+      <img src="${PREVIEW_DIR}/${e.id}.svg" width="80" height="80" onerror="this.style.display='none'" />
     `;
     chainEl.appendChild(div);
     prev = e.hash;
@@ -249,7 +255,7 @@ async function main() {
       <div class="title">${e.title}</div>
       <div class="journal">${e.journal}</div>
       <div class="hash">${e.id} · (${e.site.x}, ${e.site.z}) · prev=${e.prevHash} → hash=${e.hash}</div>
-      <img src="previews/${e.id}.svg" width="120" height="120" onerror="this.style.display='none'" />
+      <img src="${PREVIEW_DIR}/${e.id}.svg" width="120" height="120" onerror="this.style.display='none'" />
     `;
     entEl.appendChild(div);
   });

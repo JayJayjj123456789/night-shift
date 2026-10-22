@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <rect width="512" height="512" fill="#111"/>
+    <circle cx="324" cy="318" r="8" fill="#f59e0b"/><rect x="347" y="315" width="6" height="6" fill="#f59e0b" transform="rotate(45, 350, 318)"/><rect x="321" y="341" width="6" height="6" fill="#f59e0b" transform="rotate(135, 324, 344)"/><rect x="295" y="315" width="6" height="6" fill="#f59e0b" transform="rotate(225, 298, 318)"/><rect x="321" y="289" width="6" height="6" fill="#f59e0b" transform="rotate(315, 324, 292)"/>
+    <text x="8" y="500" fill="#888" font-size="10">n20261049-a · rusty engine</text>
+  </svg>

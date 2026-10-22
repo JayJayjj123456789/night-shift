@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <rect width="512" height="512" fill="#111"/>
+    <circle cx="463" cy="443" r="8" fill="#f59e0b"/><rect x="486" y="440" width="6" height="6" fill="#f59e0b" transform="rotate(45, 489, 443)"/><rect x="460" y="466" width="6" height="6" fill="#f59e0b" transform="rotate(135, 463, 469)"/><rect x="434" y="440" width="6" height="6" fill="#f59e0b" transform="rotate(225, 437, 443)"/><rect x="460" y="414" width="6" height="6" fill="#f59e0b" transform="rotate(315, 463, 417)"/>
+    <text x="8" y="500" fill="#888" font-size="10">n20261043-a · copper gears</text>
+  </svg>
