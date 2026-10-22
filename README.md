@@ -62,6 +62,8 @@
 
 **อ่านทิศทาง:** ทุกคืน 02:00 ไทย GitHub Actions เรียก orchestrator → orchestrator ถาม LLM → ผ่าน constitution → คำนวณ hash → เขียน DataStore + publish → Studio สร้างของจริงในแปลง 512×512 → orchestrator commit log + preview → deploy.yml ขึ้น GitHub Pages
 
+**ดูแบบภาพ (SVG):** [`site/architecture.html`](site/architecture.html) — deploy ขึ้น Pages แล้วที่ https://jayjayjj123456789.github.io/night-shift/architecture.html (ผูกจากหน้าแรกด้วย)
+
 **ลูกศรย้อนกลับ (ขวาล่าง):** `telemetry.lua` เก็บ near/dwell ของผู้เล่น → `ns:telemetry` → orchestrator อ่านย้อนหลัง 7 วัน → ป้อนกลับเข้า `askLLM` เป็นบริบท (AI เรียนรู้จากคืนก่อน ๆ)
 
 ---
