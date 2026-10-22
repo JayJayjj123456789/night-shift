@@ -116,7 +116,8 @@ async function main() {
   let teleDays = 0;
   let teleRows = 0;
   for (let i = 0; i < 7; i++) {
-    const d = new Date(tonight.toString().replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3"));
+    // key format must match src/telemetry.lua: os.date("!%Y-%m-%d")
+    const d = new Date(`${tonight.toString().replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3")}T00:00:00Z`);
     d.setUTCDate(d.getUTCDate() - i);
     const day = d.toISOString().slice(0, 10);
     const t = await getEntry<Record<string, { near: number; dwell: number }>>(`ns:telemetry:${day}`);

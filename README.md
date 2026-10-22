@@ -92,13 +92,24 @@ night-shift/
 
 ## ขั้นที่ 1 — Luau scripts ใน Studio
 
-ผ่าน Hermes + Roblox Studio MCP:
+**ทางเร็ว — installer อัตโนมัติ:**
 
-```
-"inject builder.lua, telemetry.lua, journal.lua เข้า ServerScriptService ของ place Night shift"
+```bash
+python3 tools/install-studio.py            # เขียน scripts + สร้างแปลง 512x512
+python3 tools/install-studio.py --check    # ตรวจว่ามีอยู่ครบไหม (เขียนอะไรไม่ได้)
+python3 tools/install-studio.py --dry-run  # ดูแผนก่อนลงมือ
 ```
 
-ทำเอง: copy `src/*.lua` → สร้าง `Script` ชื่อ `NightShiftBuilder` / `NightShiftTelemetry` / `NightShiftJournal` ใน `ServerScriptService`
+installer คุยกับ Studio ผ่าน MCP stdio ตรงๆ (ไม่ต้อง Rojo, ไม่ต้องคัดลอกเอง)
+- เลือก place จาก `placeId` (default `137052081975336`) หรือ `--name`
+- เขียน `NightShiftBuilder` / `NightShiftTelemetry` / `NightShiftJournal` ลง `ServerScriptService`
+- สร้าง `Workspace.NightShift.NightShiftPlot` ขนาด 512×512
+- **idempotent** — รันซ้ำได้ ไม่พัง
+
+> ⚠️ ต้องเปิด Roblox Studio ค้างไว้ พร้อมเปิด place แล้ว
+> Studio → Assistant → `…` → Manage MCP Servers → เปิด **"Enable Studio as MCP server"**
+
+**ทางแมนวล:** copy `src/*.lua` → สร้าง `Script` ชื่อ `NightShiftBuilder` / `NightShiftTelemetry` / `NightShiftJournal` ใน `ServerScriptService`
 
 **สำคัญ:** Studio → Game Settings → Security → เปิด **Enable Studio Access to API Services** ไม่งั้น DataStore `GetAsync` fail ใน playtest
 
@@ -390,7 +401,8 @@ jobs:
 | DataStore write key เดียวกัน | ~1 ครั้ง/6 วินาที |
 | MessagingService | 1 KB/ข้อความ, ~1–2 s latency, best-effort |
 | Open Cloud DataStore | 5,000 req/นาที/API key owner |
-| LLM budget/คืน | 4K input / 800 output / $0.10 |
+| LLM budget/คืน | 4K input / **1500** output / $0.10 |
+| Groq free tier TPM | 8,000 tokens/นาที — prompt ~1K + output 1.5K = 2.5K/ครั้ง → เว้น ≥15 วินาทีเมื่อเจอ 429 |
 
 ---
 
@@ -402,6 +414,8 @@ jobs:
 - [x] Startup rebuild ทุกชิ้นจาก ns:state
 - [x] หน้าเว็บ Pages + hash chain verify (client-side)
 - [x] `npm run status` — เช็คความคืบหน้า 7 หัวข้อในคำสั่งเดียว (exit 2 = chain พัง)
+- [x] `tools/install-studio.py` — ติดตั้ง Luau scripts ลง Studio อัตโนมัติ (MCP stdio, idempotent)
+- [x] LLM ไม่คืน void แล้ว — prompt ส่ง lexicon+sites+telemetry ครบ, 3 คืนจำลองได้ 3 form ต่างกัน
 - [ ] **30 คืนติด** ตามสเปค — วัดจาก cron รันตรง
 
 ---
@@ -415,4 +429,6 @@ jobs:
 | `404 Data store not found` | store ยังว่าง (คืนแรก) | ปกติ — auth ผ่านแล้ว |
 | `chain BROKEN` (status exit 2) | hash ไม่ตรงกับ payload หรือ `prevHash` ขาด link | ดูบรรทัด FAIL — มันบอกชิ้นไหนพัง (`n2026xxxx-a`) |
 | `no telemetry in the last 7 days` | ไม่มีผู้เข้าเกม หรือ work ไม่มี geometry | เปิดเกม + ยืนใกล้งาน >15 วินาที แล้วรอ flush (~1 นาที) |
+| installer เขียน source ไม่ได้ | `Base64Decode is not a valid member of HttpService` | Roblox ไม่มี base64 decoder — installer ใช้ Lua long-bracket string แทน (แก้แล้ว) |
+| installer บอก `Edit datamodel is not available` | Studio อยู่โหมด Play | installer จะหยุด Play ให้เอง ถ้ายังไม่ได้กด Stop ใน Studio |
 | YAML workflow parse error | `${{ secrets.X }}` โดน censor เป็น `***` | เขียนผ่าน execute_code/python |
