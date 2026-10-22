@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Night Shift — Timeline</title>
+<style>
+  :root { --bg:#0a0a0a; --fg:#ccc; --dim:#666; --line:#222; --accent:#4c4; }
+  * { box-sizing:border-box; }
+  body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg); color: var(--fg); margin:0; padding:2rem 1rem; }
+  .wrap { max-width:1100px; margin:0 auto; }
+  h1 { font-size:1.1rem; color:#888; border-bottom:1px solid var(--line); padding-bottom:.5rem; margin-bottom:1.5rem; }
+  h1 a { color:#4c4; text-decoration:none; font-size:.75rem; margin-left:1rem; }
+  .nav { font-size:.75rem; color:#666; margin-bottom:1rem; }
+  .nav a { color:#4c4; text-decoration:none; margin-right:1rem; }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:1.5rem; }
+  @media (max-width:800px) { .grid { grid-template-columns:1fr; } }
+  .card { background:#111; border:1px solid var(--line); border-radius:4px; padding:1rem; }
+  .card h2 { font-size:.85rem; color:#888; margin:0 0 .75rem; }
+  svg { width:100%; height:auto; display:block; }
+  .legend { display:flex; flex-wrap:wrap; gap:.5rem .75rem; margin-top:.5rem; font-size:.7rem; color:#666; }
+  .legend span { display:inline-flex; align-items:center; gap:.3rem; }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:50%; }
+  .entry { border:1px solid #1a1a1a; border-radius:4px; padding:.75rem; margin:.75rem 0; background:#111; }
+  .entry .meta { font-size:.75rem; color:#666; }
+  .entry .title { font-weight:bold; color:#eee; margin:.25rem 0; }
+  .entry .journal { margin:.25rem 0; color:#ddd; white-space:pre-wrap; font-size:.85rem; }
+  .entry .hash { font-size:.7rem; color:#444; }
+  .entry img { margin-top:.5rem; border-radius:4px; background:#111; }
+  .stat { display:inline-block; font-size:.75rem; color:#666; margin-right:1rem; }
+  .stat b { color:#ddd; }
+  .chain-ok { color:#4c4; }
+  .chain-bad { color:#f55; }
+  #status { font-size:.75rem; color:#666; margin-bottom:1rem; }
+  .tooltip { position:absolute; background:#000; color:#fff; padding:4px 8px; border-radius:4px; font-size:.7rem; pointer-events:none; opacity:0; transition:opacity .15s; white-space:nowrap; z-index:10; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>NIGHT SHIFT — TIMELINE <a href="index.html">← journal</a></h1>
+  <div class="nav">
+    <a href="index.html">journal (list)</a>
+    <a href="timeline.html">timeline (plot + graph)</a>
+    <a href="architecture.html">architecture (system)</a>
+  </div>
+  <div id="status">กำลังโหลด…</div>
+  <div class="grid">
+    <div class="card">
+      <h2>Plot 512×512 — ตำแหน่งของแต่ละชิ้น</h2>
+      <svg id="plot" viewBox="-256 -256 512 512" xmlns="http://www.w3.org/2000/svg">
+        <rect x="-256" y="-256" width="512" height="512" fill="#0d0d0d" stroke="#222" stroke-width="1"/>
+        <line x1="0" y1="-256" x2="0" y2="256" stroke="#1a1a1a" stroke-width="1"/>
+        <line x1="-256" y1="0" x2="256" y2="0" stroke="#1a1a1a" stroke-width="1"/>
+        <text x="4" y="-4" font-size="8" fill="#444">origin</text>
+        <g id="plot-works"></g>
+      </svg>
+      <div class="legend" id="plot-legend"></div>
+    </div>
+    <div class="card">
+      <h2>Attention — near / dwell per work (7 วันล่าสุด)</h2>
+      <svg id="attn" viewBox="0 0 400 260" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0" y="0" width="400" height="260" fill="#0d0d0d" stroke="#222" stroke-width="1"/>
+        <g id="attn-axis"></g>
+        <g id="attn-bars"></g>
+        <text id="attn-empty" x="200" y="130" font-size="10" fill="#666" text-anchor="middle">loading…</text>
+      </svg>
+      <div class="legend" id="attn-legend"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:1.5rem;">
+    <h2>Journal — ลำดับคืน (hash chain)</h2>
+    <div id="chain"></div>
+  </div>
+
+  <div class="card" style="margin-top:1.5rem;">
+    <h2>Entries</h2>
+    <div id="entries"></div>
+  </div>
+</div>
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+const FORM_COLOR = {
+  monolith: '#a78bfa',
+  garden:   '#34d399',
+  machine:  '#22d3ee',
+  text:     '#fbbf24',
+  light:    '#fb7185',
+  void:     '#64748b',
+};
+
+async function sha256Hex(str) {
+  const buf = new TextEncoder().encode(str);
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function verifyChain(entries) {
+  let prev = 'genesis';
+  for (const e of entries) {
+    const payload = JSON.stringify([e.night, e.title, e.form, e.site.x, e.site.z, e.journal, prev]);
+    const full = await sha256Hex(payload);
+    if (full.slice(0,16) !== e.hash) return { ok:false, brokenAt: e.id, got: e.hash, exp: full.slice(0,16) };
+    prev = e.hash;
+  }
+  return { ok:true };
+}
+
+function fmt(n){ return Number(n).toLocaleString(); }
+
+async function main() {
+  const status = document.getElementById('status');
+  const logRes = await fetch('log.jsonl');
+  const text = await logRes.text();
+  const entries = text.trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+  entries.sort((a,b) => a.night - b.night || (a.id < b.id ? -1 : 1));
+
+  // ---------- hash chain ----------
+  const chain = await verifyChain(entries);
+  const badge = chain.ok
+    ? '<span class="chain-ok">hash chain verified ✓</span>'
+    : `<span class="chain-bad">chain broken at ${chain.brokenAt} (got ${chain.got}, exp ${chain.exp})</span>`;
+  status.innerHTML = badge + ` · ${entries.length} works · ${entries.map(e=>e.form).filter((v,i,a)=>a.indexOf(v)===i).length} forms`;
+
+  // ---------- plot ----------
+  const plot = document.getElementById('plot-works');
+  const tip = document.getElementById('tooltip');
+  const seenForms = new Set();
+  entries.forEach((e, i) => {
+    seenForms.add(e.form);
+    const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    c.setAttribute('cx', e.site.x);
+    c.setAttribute('cy', e.site.z);
+    c.setAttribute('r', e.form === 'void' ? 4 : 6);
+    c.setAttribute('fill', FORM_COLOR[e.form] || '#888');
+    c.setAttribute('stroke', '#000');
+    c.setAttribute('stroke-width', '1');
+    c.setAttribute('opacity', '0.85');
+    c.style.cursor = 'pointer';
+    c.addEventListener('mousemove', (ev) => {
+      tip.textContent = `${e.id} · ${e.form} · (${e.site.x}, ${e.site.z}) · ${e.title}`;
+      tip.style.left = (ev.pageX + 12) + 'px';
+      tip.style.top = (ev.pageY + 12) + 'px';
+      tip.style.opacity = '1';
+    });
+    c.addEventListener('mouseleave', () => tip.style.opacity = '0');
+    plot.appendChild(c);
+    // label
+    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x', e.site.x + 8);
+    t.setAttribute('y', e.site.z - 4);
+    t.setAttribute('font-size', '7');
+    t.setAttribute('fill', '#aaa');
+    t.textContent = e.id.replace('n','').slice(0,10);
+    plot.appendChild(t);
+  });
+  const leg = document.getElementById('plot-legend');
+  [...seenForms].sort().forEach(f => {
+    const s = document.createElement('span');
+    s.innerHTML = `<i style="background:${FORM_COLOR[f]}"></i>${f}`;
+    leg.appendChild(s);
+  });
+
+  // ---------- attention bars ----------
+  // gather telemetry from DataStore via the orchestrator is not available client-side,
+  // so we read it from a published file if present, else show per-work verdict from log
+  const attnSvg = document.getElementById('attn');
+  const attnBars = document.getElementById('attn-bars');
+  const attnAxis = document.getElementById('attn-axis');
+  const attnEmpty = document.getElementById('attn-empty');
+  // try loading telemetry.jsonl (optional, written by a future cron)
+  let tele = null;
+  try {
+    const tr = await fetch('telemetry.jsonl');
+    if (tr.ok) {
+      const txt = await tr.text();
+      tele = txt.trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+    }
+  } catch(e) {}
+  // fallback: derive from log entries (no telemetry in log, so show dwell/near as N/A)
+  attnEmpty.textContent = tele ? '' : 'no telemetry.jsonl published yet — only DataStore has it';
+  if (tele && tele.length) {
+    // simple grouped bar chart: per work, near (left) and dwell (right)
+    const maxNear = Math.max(1, ...tele.map(t => t.near));
+    const maxDwell = Math.max(1, ...tele.map(t => t.dwell));
+    const w = 400, h = 260, padL = 110, padR = 20, padT = 20, padB = 30;
+    const plotH = h - padT - padB;
+    const rowH = plotH / tele.length;
+    tele.forEach((t, i) => {
+      const y = padT + i * rowH + rowH * 0.25;
+      const bh = rowH * 0.5;
+      const nearW = (t.near / maxNear) * ((w - padL - padR) / 2 - 4);
+      const dwellW = (t.dwell / maxDwell) * ((w - padL - padR) / 2 - 4);
+      // near bar
+      const r1 = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      r1.setAttribute('x', padL); r1.setAttribute('y', y);
+      r1.setAttribute('width', nearW); r1.setAttribute('height', bh);
+      r1.setAttribute('fill', '#22d3ee'); r1.setAttribute('opacity','0.7');
+      attnBars.appendChild(r1);
+      // dwell bar
+      const r2 = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      r2.setAttribute('x', padL + (w-padL-padR)/2); r2.setAttribute('y', y);
+      r2.setAttribute('width', dwellW); r2.setAttribute('height', bh);
+      r2.setAttribute('fill', '#a78bfa'); r2.setAttribute('opacity','0.7');
+      attnBars.appendChild(r2);
+      // label
+      const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+      lbl.setAttribute('x', padL - 4); lbl.setAttribute('y', y + bh*0.8);
+      lbl.setAttribute('font-size','8'); lbl.setAttribute('fill','#94a3b8');
+      lbl.setAttribute('text-anchor','end');
+      lbl.textContent = t.id.replace('n','').slice(0,12);
+      attnBars.appendChild(lbl);
+      // values
+      const val = document.createElementNS('http://www.w3.org/2000/svg','text');
+      val.setAttribute('x', padL + nearW + 4); val.setAttribute('y', y + bh*0.8);
+      val.setAttribute('font-size','7'); val.setAttribute('fill','#22d3ee');
+      val.textContent = t.near;
+      attnBars.appendChild(val);
+    });
+    const al = document.getElementById('attn-legend');
+    al.innerHTML = '<span><i style="background:#22d3ee"></i>near (visits)</span><span><i style="background:#a78bfa"></i>dwell (seconds)</span>';
+  }
+
+  // ---------- chain ----------
+  const chainEl = document.getElementById('chain');
+  let prev = 'genesis';
+  entries.forEach(e => {
+    const div = document.createElement('div');
+    div.className = 'entry';
+    div.innerHTML = `
+      <div class="meta">${e.id} · ${e.form} · night ${e.night} <span class="badge generated">AI</span></div>
+      <div class="title">${e.title}</div>
+      <div class="journal">${e.journal}</div>
+      <div class="hash">prev=${e.prevHash} → hash=${e.hash}</div>
+      <img src="previews/${e.id}.svg" width="80" height="80" onerror="this.style.display='none'" />
+    `;
+    chainEl.appendChild(div);
+    prev = e.hash;
+  });
+
+  // ---------- entries ----------
+  const entEl = document.getElementById('entries');
+  [...entries].reverse().forEach(e => {
+    const div = document.createElement('div');
+    div.className = 'entry';
+    div.innerHTML = `
+      <div class="meta">${e.id} · ${e.form} · night ${e.night}</div>
+      <div class="title">${e.title}</div>
+      <div class="journal">${e.journal}</div>
+      <div class="hash">${e.id} · (${e.site.x}, ${e.site.z}) · prev=${e.prevHash} → hash=${e.hash}</div>
+      <img src="previews/${e.id}.svg" width="120" height="120" onerror="this.style.display='none'" />
+    `;
+    entEl.appendChild(div);
+  });
+
+  if (!entries.length) {
+    document.getElementById('log') && (document.getElementById('log').textContent = 'ยังไม่มี entry — รอคืนแรก');
+  }
+}
+
+main().catch(e => { document.getElementById('status').textContent = 'error: ' + e; });
+</script>
+</body>
+</html>
