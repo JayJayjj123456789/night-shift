@@ -2,7 +2,7 @@
 
 > AI ทำงานคนเดียว 02:00–05:00 Asia/Bangkok สร้างของหนึ่งชิ้น/คืนในแปลง 512×512 มีสมุดบันทึก 200 คำ + hash chain
 
-**สถานะ: LIVE** — รันจริงครั้งแรกผ่าน 2026-10-22 (คืน 1: form `void` ลังเล ตามสเปค) · GitHub Actions cron ทุกคืน 02:00 ไทย · หน้าเว็บ GitHub Pages
+**สถานะ: LIVE** — 2 ชิ้นจริงในแปลง (`void` + `monolith`) · hash chain ผ่าน · telemetry มีข้อมูลจริง (near=182, dwell=910) · cron ทุกคืน 02:00 ไทย · หน้าเว็บ GitHub Pages
 
 สเปคเต็ม: `/Users/thxdadloveyoumost/jjfolder/testing folder/night-shift.md`
 
@@ -416,6 +416,8 @@ jobs:
 - [x] `npm run status` — เช็คความคืบหน้า 7 หัวข้อในคำสั่งเดียว (exit 2 = chain พัง)
 - [x] `tools/install-studio.py` — ติดตั้ง Luau scripts ลง Studio อัตโนมัติ (MCP stdio, idempotent)
 - [x] LLM ไม่คืน void แล้ว — prompt ส่ง lexicon+sites+telemetry ครบ, 3 คืนจำลองได้ 3 form ต่างกัน
+- [x] **คืนสองสร้างงานจริงแล้ว** — `n20261022-b` monolith @(100,80) hash=65de0e2b02056c99
+- [x] `readTelemetry` อ่าน key ถูกรูปแบบแล้ว (prompt เห็น attention จริง)
 - [ ] **30 คืนติด** ตามสเปค — วัดจาก cron รันตรง
 
 ---
@@ -431,4 +433,7 @@ jobs:
 | `no telemetry in the last 7 days` | ไม่มีผู้เข้าเกม หรือ work ไม่มี geometry | เปิดเกม + ยืนใกล้งาน >15 วินาที แล้วรอ flush (~1 นาที) |
 | installer เขียน source ไม่ได้ | `Base64Decode is not a valid member of HttpService` | Roblox ไม่มี base64 decoder — installer ใช้ Lua long-bracket string แทน (แก้แล้ว) |
 | installer บอก `Edit datamodel is not available` | Studio อยู่โหมด Play | installer จะหยุด Play ให้เอง ถ้ายังไม่ได้กด Stop ใน Studio |
+| Pages deploy ค้าง `queued` ไม่เคยขึ้นเว็บ | environment `github-pages` มี branch policy รอคนอนุมัติ | `DELETE /repos/OWNER/REPO/environments/github-pages/deployment-branch-policies/{id}` แล้ว dispatch ใหม่ |
+| telemetry ว่างทุกคืนทั้งที่มีข้อมูล | key format ไม่ตรงกับ `src/telemetry.lua` | Lua เขียน `ns:telemetry:2026-10-22` (มีขีด) — TS ต้องอ่านแบบเดียวกัน |
+| work id ซ้ำ `n20261022-a` | id ตายตัว | ตอนนี้หา suffix ตัวอักษรว่างถัดไป |
 | YAML workflow parse error | `${{ secrets.X }}` โดน censor เป็น `***` | เขียนผ่าน execute_code/python |
