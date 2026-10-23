@@ -3,7 +3,15 @@ name: Night Shift
 on:
   schedule:
     # 19:00 UTC = 02:00 Asia/Bangkok (UTC+7)
+    #
+    # Two slots, not one. GitHub's scheduler is best-effort: the only scheduled
+    # run this repo has ever had arrived 2h59m late, and a dropped slot is
+    # indistinguishable from a night that worked — the plot simply does not grow.
+    # The second slot is a retry. The idempotent guard in index.ts makes it a
+    # no-op when the first one succeeded, so the cost of the spare is one runner
+    # minute and the benefit is a night that is not silently lost.
     - cron: "0 19 * * *"
+    - cron: "0 23 * * *"   # 06:00 Bangkok, retry
   workflow_dispatch:
     inputs:
       night:
@@ -20,9 +28,22 @@ permissions:
   contents: write
   actions: write
 
+# One night at a time.
+#
+# The guard in index.ts is a read-then-write: two runs that start together both
+# read the same ns:state, both build, and the second PATCH overwrites the first
+# work's place in the index. The chain then holds a work nothing points at, and
+# the night is lost with a green checkmark. cancel-in-progress stays false so a
+# manual dispatch waits for the cron instead of killing a night mid-build.
+concurrency:
+  group: night-shift
+  cancel-in-progress: false
+
 jobs:
   run-night:
     runs-on: ubuntu-latest
+    # A hung LLM fetch must not hold the concurrency group for the default 6h.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -53,6 +74,21 @@ jobs:
       - name: Test
         working-directory: orchestrator
         run: node --test test/night.test.js
+
+      # A typo in the `night` input used to reach the hash as NaN and poison the
+      # chain. Fail before anything is written.
+      - name: Validate NIGHT
+        run: |
+          NIGHT="${{ github.event.inputs.night }}"
+          if [ -z "$NIGHT" ]; then NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d); fi
+          case "$NIGHT" in
+            [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+            *) echo "::error::NIGHT='$NIGHT' is not YYYYMMDD"; exit 1 ;;
+          esac
+          if ! date -d "${NIGHT:0:4}-${NIGHT:4:2}-${NIGHT:6:2}" >/dev/null 2>&1; then
+            echo "::error::NIGHT=$NIGHT is not a real date"; exit 1
+          fi
+          echo "NIGHT=$NIGHT is valid"
 
       - name: Run night
         working-directory: orchestrator
