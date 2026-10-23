@@ -318,22 +318,36 @@ test("void is a refusal once someone has come to look", () => {
   );
 });
 
-test("every third night must be an assembly", () => {
-  // asking politely failed three nights running; one night in three is now forced
+test("every third work must be an assembly", () => {
+  // asking politely failed three nights running; one in three is now forced.
+  // keyed on the work count, not the date — 20261034 % 3 == 0 and October 34 is
+  // not a date, which is how run #14 found out
   const plain = decision();
-  assert.doesNotThrow(() => assertConstitution(plain, emptyState, false, 20261030));
+  const withWorks = (n) => ({
+    ...emptyState,
+    works: Array.from({ length: n }, (_, i) => ({ id: `n${i}`, site: { x: 0, z: 0 }, form: "void" })),
+  });
+  assert.doesNotThrow(() => assertConstitution(plain, withWorks(11), false));
   assert.throws(
-    () => assertConstitution(plain, emptyState, false, 20261031),
-    /assembly night — send "parts" with at least 2 parts/,
+    () => assertConstitution(plain, withWorks(12), false),
+    /every third one is an assembly — send "parts" with at least 2 parts/,
   );
   assert.doesNotThrow(
-    () => assertConstitution(decision({ parts: legalParts }), emptyState, false, 20261031),
+    () => assertConstitution(decision({ parts: legalParts }), withWorks(12), false),
   );
   // one part is not an assembly either
   assert.throws(
-    () => assertConstitution(decision({ parts: [legalParts[0]] }), emptyState, false, 20261031),
-    /assembly night/,
+    () => assertConstitution(decision({ parts: [legalParts[0]] }), withWorks(12), false),
+    /every third one is an assembly/,
   );
+});
+
+test("an impossible NIGHT degrades instead of throwing", () => {
+  // October 32 is not a date; readTelemetry used to throw RangeError and the
+  // whole night became a void (run #14, night 20261032)
+  process.env.NIGHT = "20261032";
+  const { readTelemetry } = require("../dist/llm.js");
+  return readTelemetry(emptyState).then((t) => assert.deepStrictEqual(t, []));
 });
 
 // ---------------------------------------------------------------- signatures

@@ -56,6 +56,10 @@ export async function exportTelemetry(latestNight: number): Promise<number> {
   if (!latestNight) return 0;
   const iso = String(latestNight).replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3");
   const base = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(base.getTime())) {
+    console.warn(`exportTelemetry: night ${latestNight} is not a real date — skipped`);
+    return 0;
+  }
   const totals: Record<string, { near: number; dwell: number }> = {};
 
   for (let i = 0; i < 7; i++) {

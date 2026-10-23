@@ -52,6 +52,13 @@ export async function readTelemetry(state: State): Promise<Attention[]> {
   // -> "ns:telemetry:2026-10-22". Using YYYYMMDD here silently reads nothing, so
   // the prompt got an empty attention list every single night.
   const base = new Date(`${getNight().toString().replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3")}T00:00:00Z`);
+  // A hand-set NIGHT can name a date that does not exist (20261032 -> October
+  // 32). Telemetry is an input, not the work: degrade to none instead of
+  // throwing and turning the whole night into a void.
+  if (Number.isNaN(base.getTime())) {
+    console.warn(`readTelemetry: NIGHT=${getNight()} is not a real date — no attention data`);
+    return [];
+  }
   for (let i = 0; i < 7; i++) {
     const d = new Date(base);
     d.setUTCDate(d.getUTCDate() - i);

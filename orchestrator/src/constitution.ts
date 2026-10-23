@@ -50,11 +50,12 @@ function assertParts(parts: Part[]): void {
   }
 }
 
-/** How often an assembly is compulsory. One night in three. */
+/** How often an assembly is compulsory. One work in three. */
 export const ASSEMBLY_EVERY = 3;
 
-export function isAssemblyNight(night: number): boolean {
-  return night > 0 && night % ASSEMBLY_EVERY === 0;
+/** True when the work about to be built must be an assembly. */
+export function isAssemblyNight(worksSoFar: number): boolean {
+  return worksSoFar > 0 && worksSoFar % ASSEMBLY_EVERY === 0;
 }
 
 function findViolations(text: string): string[] {
@@ -84,15 +85,18 @@ export function assertConstitution(
     throw new Error("void is not allowed while attention data exists — respond to it");
   }
 
-  // Every third night must be an assembly. Three nights of evidence say asking
+  // Every third work must be an assembly. Three nights of evidence say asking
   // politely does not work: opt-in parts -> no parts; "most nights compose" ->
   // no parts; that plus the void ban -> still no parts. The model reads an
-  // optional field as optional. One night in three is forced, the rest are free
-  // to be a single object, which keeps the restrained nights that give the
-  // assembled ones something to contrast with.
-  if (isAssemblyNight(night) && !(d.parts && d.parts.length >= 2)) {
+  // optional field as optional.
+  //
+  // Keyed on the work count, not the date: 20261031 % 3 == 0 but 20261034 % 3 == 0
+  // too, and October 34 is not a date. The calendar makes the rotation lumpy and
+  // untestable; the number of works already standing does not.
+  if (isAssemblyNight(state.works.length) && !(d.parts && d.parts.length >= 2)) {
     throw new Error(
-      `night ${night} is an assembly night — send "parts" with at least 2 parts`,
+      `this is work ${state.works.length + 1} and every third one is an assembly — `
+      + `send "parts" with at least 2 parts`,
     );
   }
 
