@@ -264,13 +264,13 @@ idempotent — รันซ้ำไม่เพิ่มอะไร · เจ�
 
 **ไฟล์:** `.github/workflows/night.yml` — schedule `0 19 * * *` UTC = 02:00 Asia/Bangkok + `workflow_dispatch` กดรันมือ
 
-> ⚠️ **บล็อกข้างล่างคือสถานะเป้าหมาย ไม่ใช่สถานะจริง** — สองส่วนท้าย (`permissions:` และ step `Resync site log`) ยัง **apply ไม่ได้** เพราะ PAT ที่ใช้ push มี scope แค่ `repo` และ GitHub ไม่ยอมให้เขียนไฟล์ใน `.github/workflows/` ถ้าไม่มี scope `workflow` ต้องแปะผ่าน web editor เอง (หรือใช้ token ที่มี `workflow` scope)
+> ⚠️ **สถานะ ณ 24 ต.ค. 01:20** — เวอร์ชันที่แปะไปแล้ว (`f050dc2`) มี `permissions` + `Resync` ครบ และรันผ่าน (run #7) แต่ยังขาดอีกอย่าง: **`Deploy site to Pages`** ด้านล่าง
 >
-> ส่วนที่แก้ไปแล้วจริงและมีผลแล้ว: repo setting `default_workflow_permissions` = `write` (เดิม `read`) — คืนนี้ cron จึง push ได้ แต่ถ้าใครไปพลิก setting นี้กลับ push จะ 403 อีก จึงควรประกาศในไฟล์ให้จบ
+> สาเหตุ: push ที่ทำด้วย `GITHUB_TOKEN` **ไม่ trigger workflow อื่น** (GitHub กัน recursive run ไว้) — `deploy.yml` เลยรอ push event ที่ไม่มีวันมา คอมมิตขึ้น repo แต่เว็บเสิร์ฟคืนเก่าต่อไป ทางแก้คือ `workflow_dispatch` ซึ่งเป็นข้อยกเว้นเดียวที่ trigger ได้ → เพิ่ม `actions: write` แล้วเรียก `gh workflow run deploy.yml --ref main` ปิดท้าย
 >
-> **วิธีแปะ (ครั้งเดียว):** เปิด `github.com/JayJayjj123456789/night-shift/edit/main/.github/workflows/night.yml` → กดทั้งไฟล์ (⌘A) → วางไฟล์ที่เตรียมไว้ → Commit changes เข้า `main` ตรงๆ ได้ ไม่ต้องผ่าน PR (ไฟล์นี้ไม่มี test ให้รอ)
+> **วิธีแปะ:** เปิด `github.com/JayJayjj123456789/night-shift/edit/main/.github/workflows/night.yml` → ⌘A → วางไฟล์จาก `~/Downloads/night.yml` → Commit เข้า `main` ตรงๆ (ไฟล์นี้ไม่มี test ให้รอ)
 >
-> หลังแปะแล้วมี input `night` เพิ่มมา: Actions → Night Shift → Run workflow → ใส่ `20261025` เพื่อลองของจริงได้ทันที ไม่ต้องรอ 02:00 (คืนที่รันไปแล้วจะ skip เองเพราะ idempotent)
+> มี input `night` อยู่แล้ว: Actions → Night Shift → Run workflow → ใส่ `20261025` เพื่อลองได้ทันที ไม่ต้องรอ 02:00 (คืนที่รันไปแล้วจะ skip เอง)
 
 ```yaml
 name: Night Shift
@@ -286,12 +286,14 @@ on:
         required: false
         default: ""
 
-# The default GITHUB_TOKEN in this repo was read-only, so git-auto-commit could
-# commit locally and then get 403 on push — the night succeeded, the log line
-# died with the runner, and the site fell a night behind in silence.
-# (run 39861514089, 2026-10-23: "Permission to ... denied to github-actions[bot]")
+# contents: write  -> the nightly commit can push at all (the repo default was read-only)
+# actions: write   -> it can dispatch deploy.yml afterwards. A push made with
+#                     GITHUB_TOKEN does NOT trigger other workflows (GitHub blocks
+#                     recursive runs), so the deploy has to be asked for by name.
+#                     workflow_dispatch is the documented exception, so this works.
 permissions:
   contents: write
+  actions: write
 
 jobs:
   run-night:
@@ -362,11 +364,21 @@ jobs:
           node dist/status.js
 
       - name: Commit log + previews
+        id: commit
         if: always()
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           file_pattern: "site/log.jsonl site/previews/*.svg"
           commit_message: "night shift: ${{ github.run_id }}"
+
+      # A push from GITHUB_TOKEN cannot trigger another workflow, so the Pages
+      # deploy has to be dispatched explicitly. Without this the commit lands and
+      # the site keeps serving the previous night — green everywhere, stale page.
+      - name: Deploy site to Pages
+        if: always() && steps.commit.outputs.changes_detected == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run deploy.yml --ref main
 ```
 
 สิ่งที่แต่ละ step ทำ:
@@ -381,6 +393,7 @@ jobs:
 | `Resync site log` | เขียน `site/log.jsonl` ใหม่ทั้งไฟล์จาก `ns:state` + `ns:work:*` + preview ที่ขาด — **รันก่อน verify** เพื่อให้ตรวจของจริง ไม่ใช่ของที่ค้าง | `if: always()` · exit 2 = chain พัง (บอก work ที่พัง) |
 | `Verify chain` | `status.js` 7 หัวข้อ — chain **และ** site ต้องตรงกับ DataStore | exit 2 = chain พัง หรือ site ตกหลัง DataStore |
 | `git-auto-commit` | push `site/log.jsonl` + `previews/*.svg` กลับเข้า repo | ต้องมี `permissions: contents: write` ที่ระดับ workflow — ไม่งั้น commit ผ่านแต่ push 403 · `if: always()` |
+| `Deploy site to Pages` | เรียก `gh workflow run deploy.yml` หลังคอมมิตมีของจริง | `actions: write` · **จำเป็น** เพราะ push จาก `GITHUB_TOKEN` ไม่ trigger workflow อื่น |
 
 **NIGHT idempotent** — ถ้า cron รันซ้ำในคืนเดิม (หรือกด manual ซ้ำ) orchestrator เห็น `ns:work:n{NIGHT}-*` มีแล้ว → ไม่สร้างของใหม่ แค่ skip ทักทาย
 
@@ -525,3 +538,4 @@ jobs:
 | หลังแก้ token แล้ว เว็บขึ้น `chain broken at n{คืนนี้}` | งานของคืนที่หายไปยังไม่อยู่ในไฟล์ → งานคืนนี้ chain ไปเกาะ hash ที่ไม่มีในไฟล์ | ต้อง `npm run resync` **ก่อน** คืนถัดไปรัน ไม่งั้นยิ่ง push ได้ยิ่งพัง (เจอจริง: กู้ `n20261023-a` แล้วไฟล์กลับมา verify ผ่าน 3 entries) |
 | run เขียวทั้งที่เว็บไม่ขยับ | `hesitate()` เคยไม่เขียน log/preview → ไม่มีอะไรให้ commit → step `success` แบบไม่ทำอะไร | แก้แล้ว: ทุกผลลัพธ์ผ่าน `publishWork()` · และ status หัวข้อ 6 เป็น `FAIL` แล้ว ไม่ใช่ `WARN` |
 | `lexicon: title has [...]` แล้วได้ void | โมเดลเขียนคำนอกลิสต์ 200 คำ (พบบ่อย: `the` `a` `of` และชื่อ form เอง) | มี retry 1 ครั้งพร้อมบอกคำที่ผิดแล้ว · prompt เตือนเรื่อง article/of/form name ชัดขึ้น |
+| Night Shift เขียว คอมมิตขึ้น repo แต่เว็บไม่เปลี่ยน | push จาก `GITHUB_TOKEN` ไม่ trigger workflow อื่น → `deploy.yml` ไม่เคยรัน | ต้อง `workflow_dispatch` จากใน workflow (`gh workflow run deploy.yml --ref main` + `actions: write`) — เจอจริง run #7 (24 ต.ค.) |
