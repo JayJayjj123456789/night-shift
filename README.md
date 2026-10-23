@@ -267,6 +267,10 @@ idempotent — รันซ้ำไม่เพิ่มอะไร · เจ�
 > ⚠️ **บล็อกข้างล่างคือสถานะเป้าหมาย ไม่ใช่สถานะจริง** — สองส่วนท้าย (`permissions:` และ step `Resync site log`) ยัง **apply ไม่ได้** เพราะ PAT ที่ใช้ push มี scope แค่ `repo` และ GitHub ไม่ยอมให้เขียนไฟล์ใน `.github/workflows/` ถ้าไม่มี scope `workflow` ต้องแปะผ่าน web editor เอง (หรือใช้ token ที่มี `workflow` scope)
 >
 > ส่วนที่แก้ไปแล้วจริงและมีผลแล้ว: repo setting `default_workflow_permissions` = `write` (เดิม `read`) — คืนนี้ cron จึง push ได้ แต่ถ้าใครไปพลิก setting นี้กลับ push จะ 403 อีก จึงควรประกาศในไฟล์ให้จบ
+>
+> **วิธีแปะ (ครั้งเดียว):** เปิด `github.com/JayJayjj123456789/night-shift/edit/main/.github/workflows/night.yml` → กดทั้งไฟล์ (⌘A) → วางไฟล์ที่เตรียมไว้ → Commit changes เข้า `main` ตรงๆ ได้ ไม่ต้องผ่าน PR (ไฟล์นี้ไม่มี test ให้รอ)
+>
+> หลังแปะแล้วมี input `night` เพิ่มมา: Actions → Night Shift → Run workflow → ใส่ `20261025` เพื่อลองของจริงได้ทันที ไม่ต้องรอ 02:00 (คืนที่รันไปแล้วจะ skip เองเพราะ idempotent)
 
 ```yaml
 name: Night Shift
@@ -275,9 +279,17 @@ on:
   schedule:
     # 19:00 UTC = 02:00 Asia/Bangkok (UTC+7)
     - cron: "0 19 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      night:
+        description: "YYYYMMDD. Empty = today in Bangkok. A night that already ran is a safe no-op (idempotent)."
+        required: false
+        default: ""
 
-# default GITHUB_TOKEN ใน repo นี้เป็น read-only → commit ได้ แต่ push 403
+# The default GITHUB_TOKEN in this repo was read-only, so git-auto-commit could
+# commit locally and then get 403 on push — the night succeeded, the log line
+# died with the runner, and the site fell a night behind in silence.
+# (run 39861514089, 2026-10-23: "Permission to ... denied to github-actions[bot]")
 permissions:
   contents: write
 
@@ -310,22 +322,15 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
         run: |
-          export NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d)
+          NIGHT="${{ github.event.inputs.night }}"
+          if [ -z "$NIGHT" ]; then NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d); fi
+          export NIGHT
           echo "NIGHT=$NIGHT"
           node dist/index.js
 
-      - name: Verify chain
-        working-directory: orchestrator
-        env:
-          ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
-          UNIVERSE_ID: ${{ secrets.UNIVERSE_ID }}
-          LLM_BASE: ${{ secrets.LLM_BASE }}
-          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-          LLM_MODEL: ${{ secrets.LLM_MODEL }}
-        run: |
-          export NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d)
-          node dist/status.js
-
+      # DataStore is the truth; site/log.jsonl is derived from it. Rebuild before
+      # anyone checks the file, so a night that ran while a push was failing still
+      # lands, and a hesitation that never wrote a log line still gets published.
       - name: Resync site log from DataStore
         if: always()
         working-directory: orchestrator
@@ -336,8 +341,25 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
         run: |
-          export NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d)
+          NIGHT="${{ github.event.inputs.night }}"
+          if [ -z "$NIGHT" ]; then NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d); fi
+          export NIGHT
           node dist/resync.js
+
+      - name: Verify chain
+        if: always()
+        working-directory: orchestrator
+        env:
+          ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
+          UNIVERSE_ID: ${{ secrets.UNIVERSE_ID }}
+          LLM_BASE: ${{ secrets.LLM_BASE }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+        run: |
+          NIGHT="${{ github.event.inputs.night }}"
+          if [ -z "$NIGHT" ]; then NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d); fi
+          export NIGHT
+          node dist/status.js
 
       - name: Commit log + previews
         if: always()
@@ -355,9 +377,10 @@ jobs:
 | `setup-node` | Node 20 + npm cache (key = package-lock.json) | เปลี่ยน `cache-dependency-path` ถ้า yml ย้ายที่ |
 | `npm ci` | install ตาม lockfile แม่นๆ | lockfile เก่า → `npm install` แล้ว commit lock ใหม่ |
 | `npm run build` | `tsc` → `dist/*.js` | TS error — รัน `npx tsc` ท้องถิ่นก่อน |
-| `Run night` | export `NIGHT` เป็นวันที่ไทย แล้วรัน orchestrator · ถ้า LLM ตอบผิดกฎจะได้แก้ตัว **1 ครั้ง** (ส่งข้อหาไปบอก) ก่อนยอมแพ้เป็น void | 401/403 → key issue; LLM error → quota |
-| `Resync site log` | ดึง `ns:state` + `ns:work:*` ทั้งหมดมาเขียน `site/log.jsonl` ใหม่ + preview ที่ขาด (DataStore = ความจริง, ไฟล์ใน repo = ของที่ derive มา) | `if: always()` — ทำงานแม้คืนนี้ล้ม เพื่อซ่อมช่องว่างจากคืนก่อน · **ยังไม่ apply ใน workflow จริง** (ดูหมายเหตุเหนือบล็อก yaml) |
-| `git-auto-commit` | push `site/log.jsonl` + `previews/*.svg` กลับเข้า repo | ต้องมี `permissions: contents: write` ที่ระดับ workflow — ไม่งั้น commit ผ่านแต่ push 403 |
+| `Run night` | `NIGHT` = input `night` ถ้ากดมือ ไม่งั้น = วันที่ไทย แล้วรัน orchestrator · LLM ตอบผิดกฎได้แก้ตัว **1 ครั้ง** (ส่งข้อหาไปบอก) ก่อนยอมแพ้เป็น void | 401/403 → key issue; LLM error → quota |
+| `Resync site log` | เขียน `site/log.jsonl` ใหม่ทั้งไฟล์จาก `ns:state` + `ns:work:*` + preview ที่ขาด — **รันก่อน verify** เพื่อให้ตรวจของจริง ไม่ใช่ของที่ค้าง | `if: always()` · exit 2 = chain พัง (บอก work ที่พัง) |
+| `Verify chain` | `status.js` 7 หัวข้อ — chain **และ** site ต้องตรงกับ DataStore | exit 2 = chain พัง หรือ site ตกหลัง DataStore |
+| `git-auto-commit` | push `site/log.jsonl` + `previews/*.svg` กลับเข้า repo | ต้องมี `permissions: contents: write` ที่ระดับ workflow — ไม่งั้น commit ผ่านแต่ push 403 · `if: always()` |
 
 **NIGHT idempotent** — ถ้า cron รันซ้ำในคืนเดิม (หรือกด manual ซ้ำ) orchestrator เห็น `ns:work:n{NIGHT}-*` มีแล้ว → ไม่สร้างของใหม่ แค่ skip ทักทาย
 
