@@ -113,9 +113,28 @@ async function main() {
 
   // ---------- 3. Tonight's state ----------
   console.log("\n\x1b[1m3. Tonight\x1b[0m");
-  const ranTonight = state.night >= tonight;
-  if (ranTonight) ok(true, `already ran for night ${tonight} (idempotent guard held)`);
-  else warn(`night ${tonight} has NOT run yet — cron should fire at 19:00 UTC / 02:00 TH`);
+  // Night numbers are YYYYMMDD, so subtracting them is not a day count:
+  // 20261104 - 20261022 = 82, but the two dates are 13 days apart.
+  const asDate = (n: number) => {
+    const s = String(n);
+    const d = new Date(`${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T00:00:00Z`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+  const plotDay = asDate(state.night);
+  const today = asDate(tonight);
+  const drift = plotDay && today ? Math.round((plotDay.getTime() - today.getTime()) / 86400000) : 0;
+  if (state.night === tonight) {
+    ok(true, `night ${tonight} already ran (idempotent guard held)`);
+  } else if (!drift || drift < 0) {
+    warn(`night ${tonight} has NOT run yet — cron should fire at 19:00 UTC / 02:00 TH`);
+  } else {
+    // The plot being ahead of the calendar is invisible from the outside: every
+    // scheduled run prints "already ran tonight", exits 0, and looks exactly like
+    // a healthy night. That is how twelve silent nights would go unnoticed.
+    const catchesUp = new Date(plotDay!.getTime() + 86400000).toISOString().slice(0, 10);
+    warn(`the plot is ${drift} night(s) AHEAD of the calendar (plot ${state.night}, today ${tonight})`);
+    warn(`every scheduled run is a silent no-op until ${catchesUp} — dispatch with night=${state.night + 1} to advance`);
+  }
 
   // ---------- 4. Site occupancy (would the next work collide?) ----------
   console.log("\n\x1b[1m4. Site map\x1b[0m");

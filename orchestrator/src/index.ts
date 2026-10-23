@@ -195,7 +195,25 @@ export async function runNight(): Promise<void> {
   };
 
   if (state.night >= getNight()) {
-    console.log("already ran tonight");
+    // Say WHY, and say it loudly when the plot has run ahead of the calendar.
+    // A silent no-op and a healthy night look identical in the Actions list —
+    // that is the lesson this project keeps relearning. Night numbers are
+    // YYYYMMDD, so they are compared as dates, never subtracted.
+    const asDate = (n: number) => {
+      const s = String(n);
+      const d = new Date(`${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T00:00:00Z`);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+    const plotDay = asDate(state.night);
+    const today = asDate(getNight());
+    const drift = plotDay && today ? Math.round((plotDay.getTime() - today.getTime()) / 86400000) : 0;
+    console.log(`already ran tonight — plot is at night ${state.night}, calendar says ${getNight()}`);
+    if (drift > 0) {
+      console.warn(
+        `the plot is ${drift} night(s) ahead of the calendar: this run built nothing. `
+        + `Dispatch with night=${state.night + 1} to advance the plot.`,
+      );
+    }
     return;
   }
 
