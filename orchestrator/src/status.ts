@@ -3,6 +3,8 @@
 import "./env";
 import { getEntry, getNight } from "./datastore";
 import { allKeys, verifyWithAny } from "./sign";
+import { repoBuilderVersion, compareBuilder } from "./builder-version";
+import type { BuilderReport } from "./builder-version";
 import { verifyChain } from "./chain";
 import { createHash } from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
@@ -197,7 +199,35 @@ async function main() {
     }
   }
 
+  // ---------- 5b. The place's own report ----------
+  // The repo cannot read the running place and the place cannot read the repo.
+  // The only thing that crosses is BUILDER_VERSION, reported in ns:builder on
+  // every server start. A place that was never re-installed after a change to
+  // builder.lua reports an older number here — that is the whole detector.
+  let placeOk = true;
+  {
+    const repoV = repoBuilderVersion();
+    let placeV: BuilderReport | null = null;
+    try {
+      placeV = await getEntry<BuilderReport>("ns:builder");
+    } catch {
+      /* the store being unreachable is already a FAIL above */
+    }
+    const bv = compareBuilder(repoV, placeV);
+    if (bv.state === "in-sync") ok(true, bv.detail);
+    else if (bv.state === "stale") {
+      ok(false, bv.detail);
+      placeOk = false;
+    } else if (bv.state === "unknown") {
+      ok(false, bv.detail);
+      placeOk = false;
+    } else {
+      warn(bv.detail);
+    }
+  }
+
   // ---------- 6. Public site ----------
+
   console.log("\n\x1b[1m6. Public site\x1b[0m");
   const logPath = join(__dirname, "..", "..", "site", "log.jsonl");
   if (existsSync(logPath)) {
@@ -254,9 +284,10 @@ async function main() {
   console.log("");
   console.log(chainOk ? G("  overall: chain INTACT") : R("  overall: chain BROKEN"));
   console.log(siteOk ? G("  site: in sync with the DataStore") : R("  site: BEHIND — run `npm run resync`"));
+  if (!placeOk) console.log(R("  place: STALE — the running place is behind this repo"));
   console.log("");
   // non-zero exit so CI fails fast on a broken chain or a stale public site
-  if (!chainOk || !siteOk) process.exit(2);
+  if (!chainOk || !siteOk || !placeOk) process.exit(2);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

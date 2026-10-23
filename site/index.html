@@ -116,7 +116,7 @@
   <a href="timeline3d.html">3D เต็มจอ</a>
   <a href="timeline3d.html?src=sim.jsonl">3D จำลอง 30 คืน</a>
   <a href="architecture.html">ระบบทั้งหมด</a>
-  <span class="right">hash-chained · signed</span>
+  <span class="right" id="place" title="which builder the running place reports">hash-chained · signed</span>
 </footer>
 
 <script src="chain.js"></script>
@@ -184,6 +184,31 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
     $("latest").innerHTML = `<div class="label">คืนล่าสุด</div><div class="empty">โหลด log.jsonl ไม่ได้<br><span style="color:#844">${esc(e.message)}</span></div>`;
     $("s-chain").className = "badge bad";
     $("s-chain").textContent = "no data";
+  }
+
+  // ── which builder the running place reports ──
+  // The repo cannot read the place and the place cannot read the repo; the only
+  // thing that crosses is BUILDER_VERSION. If the place was never re-installed
+  // after a change to builder.lua, this line says so instead of the page quietly
+  // showing work the game builds differently.
+  try {
+    const r = await fetch("builder.json");
+    if (r.ok) {
+      const b = await r.json();
+      const el = $("place");
+      const v = b.place && typeof b.place.version === "number" ? b.place.version : null;
+      if (b.state === "in-sync") el.textContent = `place v${v} · in sync`;
+      else if (b.state === "stale") {
+        el.textContent = `place v${v} · STALE (repo v${b.repo})`;
+        el.style.color = "#f55";
+      } else if (b.state === "ahead") {
+        el.textContent = `place v${v} · ahead of repo`;
+        el.style.color = "#fa5";
+      } else if (b.state === "never-reported") el.textContent = "place: never reported";
+      else el.textContent = "place: unknown";
+    }
+  } catch {
+    /* builder.json is optional — the page works without it */
   }
 })();
 </script>

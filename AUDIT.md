@@ -181,21 +181,40 @@ unsigned, nothing breaks). Rotating it is now survivable too, but a work signed
 by a key that was never published cannot be verified by anyone, ever — so publish
 first, rotate second.
 
-## S2 — the game and the site can disagree and nothing notices
+## S2 — the game and the site can disagree — **detector shipped, install still manual**
 
 `src/builder.lua` is installed into the place by `tools/install-studio.py`, which
 needs Studio open, the place loaded and the MCP bridge enabled. It is a manual
-step. `builder.lua` was edited on 2026-10-24; whether the running place has that
-version is unknowable from the repo.
+step, and it is **not** a runtime dependency: once installed and published, the
+place runs on Roblox's servers whether or not this Mac is awake. Studio is only
+needed again when one of the three Luau files changes.
 
-If they drift, the site shows a work that the game builds differently — or does
-not build at all — and every check in this system still passes, because every
-check reads the orchestrator, never the place.
+That is the whole risk, and it is small but silent: change `builder.lua`, forget
+the install, and the repo and the place drift apart. The site then shows a work
+the game builds differently, and every check still passes because every check
+reads the orchestrator and never the place.
 
-**Open.** `Work.builderVersion` already exists and is hardcoded to `1`; it is never
-bumped and never compared. The cheap fix: have `builder.lua` write its own hash to
-`ns:builder` on startup, and have `status` compare it with the repo's file. Then
-drift is a red line instead of a mystery.
+**Detector shipped.** `BUILDER_VERSION` at the top of `builder.lua` is bumped by
+hand in the same commit as any change to that file. Every server start writes it
+to `ns:builder` (one write, inside a `pcall` — a failed heartbeat must never stop
+the plot from being built). Then:
+
+| where | what it says |
+|---|---|
+| `npm run status` | `PASS place is running v3` / `FAIL the place is running v2, the repo has v3 — run tools/install-studio.py` |
+| the site footer | `place v3 · in sync` / `place v2 · STALE (repo v3)` / `place: never reported` |
+
+A missing heartbeat is a WARN, not a failure: a brand new place, or one nobody
+has played since the heartbeat was added, has nothing to report — and failing
+there would punish exactly the state the check exists to fix. A place *behind*
+the repo is a FAIL, because that is the game building with old code.
+
+**What it cannot do:** repair the place. Only `install-studio.py` can. The
+detector makes the drift a line instead of a mystery.
+
+**Still manual:** the install itself, and the fact that the heartbeat only updates
+when someone actually joins the place. If nobody ever plays, `status` says
+"never reported" forever — which is also true, and is the more important fact.
 
 ## S3 — latent: the preview writes the title into SVG unescaped
 

@@ -1,0 +1,6 @@
+{
+  "repo": 3,
+  "place": null,
+  "state": "never-reported",
+  "detail": "the place has never reported a builder version (repo has v3) — open the place once, or the heartbeat is not installed"
+}

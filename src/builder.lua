@@ -11,6 +11,15 @@
 -- reads as deliberate. Primitives only, no meshes: a server must be able to
 -- rebuild the whole plot from the DataStore with no asset dependency.
 
+-- Bumped by hand whenever this file changes, in the same commit as the change.
+--
+-- Nothing in the place can know what the repo contains, so the number is the only
+-- thing that can travel. The startup heartbeat below writes it to ns:builder, the
+-- orchestrator reads that and compares it with this line, and `npm run status`
+-- then says "the place is running v2, the repo has v3" instead of staying green
+-- over a place that was never re-installed.
+local BUILDER_VERSION = 3
+
 local DSS = game:GetService("DataStoreService")
 local Messaging = game:GetService("MessagingService")
 local Http = game:GetService("HttpService")
@@ -523,6 +532,21 @@ if state then
     if work then build(work) end
   end
 end
+
+-- heartbeat: which builder is actually running in this place.
+--
+-- One write per server start. If the place was never re-installed after a change
+-- to this file, the number here is older than the one in the repo and the
+-- orchestrator reports the mismatch. It cannot repair the place — only a fresh
+-- install-studio.py run can — but it turns a silent divergence into a line.
+-- Wrapped: a failed heartbeat must never stop the plot from being built.
+pcall(function()
+  store:SetAsync("ns:builder", {
+    version = BUILDER_VERSION,
+    works = (state and state.works and #state.works) or 0,
+    at = os.time(),
+  })
+end)
 
 -- live: build new work the moment it's published
 Messaging:SubscribeAsync("nightshift", function(msg)

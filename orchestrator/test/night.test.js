@@ -460,6 +460,28 @@ test("an impossible NIGHT degrades instead of throwing", () => {
 
 // ---------------------------------------------------------------- signatures
 
+test("the builder version crosses the gap between the repo and the place", () => {
+  // The repo cannot read the running place and the place cannot read the repo.
+  // BUILDER_VERSION is the only thing that travels, so its comparison is the
+  // whole drift detector — every branch matters.
+  const { repoBuilderVersion, compareBuilder } = require("../dist/builder-version.js");
+
+  const repo = repoBuilderVersion();
+  assert.strictEqual(typeof repo, "number", "src/builder.lua must carry a BUILDER_VERSION line");
+
+  const rep = (v) => ({ version: v, works: 1, at: 1700000000 });
+
+  assert.strictEqual(compareBuilder(repo, rep(repo)).state, "in-sync");
+  assert.strictEqual(compareBuilder(repo, rep(repo - 1)).state, "stale");
+  assert.strictEqual(compareBuilder(repo, rep(repo + 1)).state, "ahead");
+  // a place nobody has played has nothing to report, and that is a warning, not a
+  // failure — failing here would punish exactly the state the check exists for
+  assert.strictEqual(compareBuilder(repo, null).state, "never-reported");
+  assert.strictEqual(compareBuilder(null, rep(repo)).state, "unknown");
+  // the stale message must name the fix, or it is just noise in a log
+  assert.ok(/install-studio\.py/.test(compareBuilder(repo, rep(repo - 1)).detail));
+});
+
 test("a signature survives a key rotation — the ring is the whole reason", () => {
   // Rotating NS_SIGNING_KEY used to overwrite pubkey.pem, which made every
   // signature ever made fail, resync exit 3, and every following night fail too.

@@ -686,3 +686,19 @@ cd orchestrator && npm test      # build แล้วรัน node --test
 | run เขียวทั้งที่เว็บไม่ขยับ | `hesitate()` เคยไม่เขียน log/preview → ไม่มีอะไรให้ commit → step `success` แบบไม่ทำอะไร | แก้แล้ว: ทุกผลลัพธ์ผ่าน `publishWork()` · และ status หัวข้อ 6 เป็น `FAIL` แล้ว ไม่ใช่ `WARN` |
 | `lexicon: title has [...]` แล้วได้ void | โมเดลเขียนคำนอกลิสต์ 200 คำ (พบบ่อย: `the` `a` `of` และชื่อ form เอง) | มี retry 1 ครั้งพร้อมบอกคำที่ผิดแล้ว · prompt เตือนเรื่อง article/of/form name ชัดขึ้น |
 | Night Shift เขียว คอมมิตขึ้น repo แต่เว็บไม่เปลี่ยน | push จาก `GITHUB_TOKEN` ไม่ trigger workflow อื่น → `deploy.yml` ไม่เคยรัน | ต้อง `workflow_dispatch` จากใน workflow (`gh workflow run deploy.yml --ref main` + `actions: write`) — เจอจริง run #7 (24 ต.ค.) |
+
+## builder version — รู้ได้ยังไงว่า place ตรงกับ repo
+
+repo อ่าน place ไม่ได้ และ place อ่าน repo ไม่ได้ สิ่งเดียวที่ข้ามไปมาได้คือ `BUILDER_VERSION` ที่หัวไฟล์ `src/builder.lua` ( bump มือ ทุกครั้งที่แก้ไฟล์นั้น ใน commit เดียวกัน )
+
+ทุกครั้งที่ server เริ่ม ตัว builder เขียนค่านี้ลง `ns:builder` (ครั้งเดียว อยู่ใน `pcall` — heartbeat พังห้ามทำให้ plot สร้างไม่เสร็จ) แล้ว:
+
+| ที่ | ข้อความ |
+|---|---|
+| `npm run status` | `PASS place is running v3` / `FAIL the place is running v2, the repo has v3 — run tools/install-studio.py` |
+| footer ของเว็บ | `place v3 · in sync` / `place v2 · STALE (repo v3)` / `place: never reported` |
+
+- **ไม่ต้องเปิด Studio ทิ้งไว้** — ติดตั้งครั้งเดียวแล้ว publish แล้ว place รันบน server ของ Roblox เอง เปิด Studio อีกทีก็ต่อเมื่อแก้ไฟล์ `.lua` ตัวใดตัวหนึ่งใน `src/`
+- **ไม่มี heartbeat = WARN ไม่ใช่ FAIL** — place ใหม่ หรือที่ยังไม่มีใครเข้าเล่น ยังไม่มีอะไรจะรายงาน การทำให้แดงตรงนั้นคือการลงโทษสภาพที่ check นี้เกิดมาเพื่อแก้
+- **place ช้ากว่า repo = FAIL** — นั่นคือเกมกำลังสร้างด้วยโค้ดเก่า
+- ตัว detector ซ่อม place ไม่ได้ มีแต่ `install-studio.py` ที่ทำได้ — มันแค่เปลี่ยนความเงียบให้เป็นบรรทัด

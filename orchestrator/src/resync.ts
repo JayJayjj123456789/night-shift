@@ -15,6 +15,8 @@ import { getEntry, putEntry } from "./datastore";
 import { verifyChain } from "./chain";
 import { renderPreview } from "./preview";
 import { allKeys, verifyWithAny } from "./sign";
+import { repoBuilderVersion, compareBuilder } from "./builder-version";
+import type { BuilderReport } from "./builder-version";
 import type { State, Work } from "./schema";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -158,6 +160,18 @@ export async function resync(works: Work[], head: string): Promise<ResyncReport>
   }
 
   const telemetryRows = await exportTelemetry(sorted.length ? sorted[sorted.length - 1].night : 0);
+
+  // The place's last self-report, published so the site can show whether the game
+  // is running the builder this repo describes. A missing heartbeat is a state,
+  // not an error — the page says "never reported" rather than showing nothing.
+  let builderState: unknown = null;
+  try {
+    const rep = await getEntry<BuilderReport>("ns:builder");
+    builderState = compareBuilder(repoBuilderVersion(), rep);
+  } catch (e) {
+    console.warn("resync: could not read ns:builder —", String(e));
+  }
+  await writeFile(join(SITE_DIR, "builder.json"), JSON.stringify(builderState, null, 2) + "\n", "utf8");
 
   return { total: sorted.length, head, added, dropped, previews, breaks, signed, badSigs, telemetryRows, raw };
 }
