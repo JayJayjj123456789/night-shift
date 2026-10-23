@@ -262,7 +262,9 @@ HARD RULES
 4. Must sit inside the 512x512 plot.
 5. You may ONLY use the words listed below, in title and journal. No other English
    word is allowed in those two fields. "intent" is the only free-text field.
-6. If you are not sure, return form "void" and journal "no action" in English.
+6. If you are not sure, return form "void" with journal "void no" and title "void".
+   Those three words are in the list above; "no action" is not, and writing it gets
+   the whole night rejected.
 7. You may not speak or chat. Only the journal.
 
 THE ONLY WORDS YOU MAY USE IN title AND journal
