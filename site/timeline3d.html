@@ -269,18 +269,57 @@ async function main() {
   scene.add(group);
 
   // ── camera framing ─────────────────────────────────────────────────────
-  // frame on the works, but never closer than a fixed floor distance — with
-  // only one or two works the bounding box alone zooms in absurdly tight and
-  // the 512 plane (the context that makes the plot readable) drops out of view.
+  // Frame the works AND the 512 plane, then solve for the distance instead of
+  // guessing one. The previous version took the bounding-box radius and
+  // multiplied by 1.65, which happened to work at one aspect ratio: after the
+  // 2026-11-04 work landed at (-131,-190) the plot's far corner n20261026-a at
+  // (188,197) projected to y = -1.32 and fell off the bottom of the screen. The
+  // page was hiding its own work.
+  //
+  // So: take the eight corners of the union box, and double the distance until
+  // every corner projects inside the viewport with a margin. Cheap, exact, and
+  // it holds for any window shape.
   const box = new THREE.Box3().setFromObject(group);
+  box.expandByPoint(new THREE.Vector3(-256, 0, -256));
+  box.expandByPoint(new THREE.Vector3(256, 0, 256));
   const centre = box.getCenter(new THREE.Vector3());
   centre.y = HEIGHT_MAX * 0.34;
-  const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 250);
 
-  function frameView() {
-    const d = radius * 1.65;
+  const CORNERS = [];
+  for (const x of [box.min.x, box.max.x]) {
+    for (const y of [box.min.y, box.max.y]) {
+      for (const z of [box.min.z, box.max.z]) CORNERS.push(new THREE.Vector3(x, y, z));
+    }
+  }
+
+  const MARGIN = 0.92;
+
+  /** Place the camera at distance d and report whether everything still fits. */
+  function fits(d) {
     camera.position.set(centre.x + d * 0.6, centre.y + d * 0.7, centre.z + d * 0.6);
     controls.target.copy(centre);
+    camera.lookAt(centre);
+    camera.updateMatrixWorld();
+    return CORNERS.every((c) => {
+      const v = c.clone().project(camera);
+      return Math.abs(v.x) <= MARGIN && Math.abs(v.y) <= MARGIN && v.z < 1;
+    });
+  }
+
+  function frameView() {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    let d = 250;
+    // doubling, then a short bisection: the fit is monotone in d
+    while (!fits(d) && d < 4000) d *= 1.35;
+    let lo = d / 1.35;
+    let hi = d;
+    for (let i = 0; i < 24; i++) {
+      const mid = (lo + hi) / 2;
+      if (fits(mid)) hi = mid;
+      else lo = mid;
+    }
+    fits(hi);
     controls.update();
   }
   frameView();
@@ -330,10 +369,18 @@ async function main() {
     hovered = null;
   });
 
+  // Refit on resize unless the visitor has taken the camera somewhere. A wider
+  // window used to be the only thing that kept every work on screen; a narrower
+  // one silently cropped the plot.
+  let userMoved = false;
+  controls.addEventListener('start', () => { userMoved = true; });
+  $('reset').addEventListener('click', () => { userMoved = false; });
+
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
+    if (!userMoved) frameView();
   });
 
   // animated parts: spin on Y, or bob up and down
