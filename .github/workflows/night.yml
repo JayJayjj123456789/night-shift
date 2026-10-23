@@ -78,27 +78,16 @@ jobs:
       # A typo in the `night` input used to reach the hash as NaN and poison the
       # chain. Fail before anything is written.
       #
-      # Written in node, not `date -d`: node is already installed by the step
-      # above, and `date -d` is GNU-only — the same check written in shell cannot
-      # be run on a Mac to prove it works, which is how a check gets shipped
-      # untested.
+      # The check lives in tools/validate-night.js, not inline. Inline it was
+      # `node -e '...'`, shellcheck fired SC2016 on the template literals, and
+      # actionlint fails the Lint step on any finding — which skipped a whole
+      # night (run #21). A file is lintable and testable; a YAML snippet is not.
       - name: Validate NIGHT
+        working-directory: orchestrator
         run: |
           NIGHT="${{ github.event.inputs.night }}"
           if [ -z "$NIGHT" ]; then NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d); fi
-          node -e '
-            const n = process.argv[1];
-            if (!/^\d{8}$/.test(n)) {
-              console.error(`::error::NIGHT=${n} is not YYYYMMDD`);
-              process.exit(1);
-            }
-            const d = new Date(`${n.slice(0,4)}-${n.slice(4,6)}-${n.slice(6,8)}T00:00:00Z`);
-            if (Number.isNaN(d.getTime()) || d.toISOString().slice(0,10) !== `${n.slice(0,4)}-${n.slice(4,6)}-${n.slice(6,8)}`) {
-              console.error(`::error::NIGHT=${n} is not a real date`);
-              process.exit(1);
-            }
-            console.log(`NIGHT=${n} is valid`);
-          ' "$NIGHT"
+          node tools/validate-night.js "$NIGHT"
 
       - name: Run night
         working-directory: orchestrator
