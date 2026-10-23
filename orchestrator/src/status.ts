@@ -3,6 +3,7 @@
 import "./env";
 import { getEntry, getNight } from "./datastore";
 import { publicKeyPem, verifyHash } from "./sign";
+import { verifyChain } from "./chain";
 import { createHash } from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -61,7 +62,6 @@ async function main() {
 
   // ---------- 2. Hash chain ----------
   console.log("\n\x1b[1m2. Hash chain\x1b[0m");
-  let prev = "genesis";
   let chainOk = true;
   let siteOk = true;
   const workDocs: Work[] = [];
@@ -69,17 +69,25 @@ async function main() {
     const w = await getEntry<Work>(`ns:work:${ref.id}`);
     if (!w) { ok(false, `ns:work:${ref.id} missing from DataStore`); chainOk = false; continue; }
     workDocs.push(w);
-    const expect = computeHash(w.night, w.title, w.form, w.site.x, w.site.z, w.journal, w.prevHash);
-    const linkOk = w.prevHash === prev;
-    const hashOk = expect === w.hash;
-    if (!linkOk || !hashOk) {
+  }
+
+  // One verifier, shared with resync and the tests. This used to be a second
+  // copy of the walk, and when parts entered the hash payload the copy did not
+  // follow: run #17 built a genuine two-part assembly and status.js reported
+  // `chain BROKEN` for a chain that was intact. resync, which uses verifyChain,
+  // verified it fine in the same run.
+  const chain = verifyChain(workDocs as import("./schema").Work[]);
+  const breaksById = new Map(chain.breaks.map((b) => [b.id, b]));
+  for (const w of chain.ordered) {
+    const b = breaksById.get(w.id);
+    if (b) {
       chainOk = false;
-      ok(false, `${w.id}`, `link ${w.prevHash}!=${prev} | recomputed ${expect} != stored ${w.hash}`);
+      ok(false, `${w.id}`, `${b.kind} ${b.got} != ${b.expected}`);
     } else {
       ok(true, `${w.id} ${w.form.padEnd(9)} hash=${w.hash}`);
     }
-    prev = w.hash;
   }
+  const prev = chain.head;
   if (state.works.length === 0) warn("no works yet — chain is empty (valid genesis)");
   if (chainOk && state.works.length) ok(true, `chain head matches state.journalHead (${state.journalHead})`,
      state.journalHead !== prev ? `state head=${state.journalHead} but last work hash=${prev}` : "");
