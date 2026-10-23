@@ -123,7 +123,9 @@ async function main() {
   const plotDay = asDate(state.night);
   const today = asDate(tonight);
   const drift = plotDay && today ? Math.round((plotDay.getTime() - today.getTime()) / 86400000) : 0;
-  if (state.night === tonight) {
+  if (!today) {
+    warn(`NIGHT=${tonight} is not a real date — "has it run tonight" has no meaning until that is fixed`);
+  } else if (state.night === tonight) {
     ok(true, `night ${tonight} already ran (idempotent guard held)`);
   } else if (!drift || drift < 0) {
     warn(`night ${tonight} has NOT run yet — cron should fire at 19:00 UTC / 02:00 TH`);
@@ -168,21 +170,31 @@ async function main() {
 
   // ---------- 5. Telemetry (the feedback loop) ----------
   console.log("\n\x1b[1m5. Telemetry\x1b[0m");
-  let teleDays = 0;
-  let teleRows = 0;
-  for (let i = 0; i < 7; i++) {
-    // key format must match src/telemetry.lua: os.date("!%Y-%m-%d")
-    const d = new Date(`${tonight.toString().replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3")}T00:00:00Z`);
-    d.setUTCDate(d.getUTCDate() - i);
-    const day = d.toISOString().slice(0, 10);
-    const t = await getEntry<Record<string, { near: number; dwell: number }>>(`ns:telemetry:${day}`);
-    if (t && Object.keys(t).length) { teleDays++; teleRows += Object.keys(t).length; info(`${day}: ${Object.keys(t).length} work(s) tracked`); }
-  }
-  if (teleDays === 0) {
-    warn("no telemetry in the last 7 days — nobody has visited the game, so the LLM has zero attention signal");
-    warn("  fix: open the place with a player and stand near a work for >15s, then wait for the flush");
+  // A malformed NIGHT used to reach toISOString() as an Invalid Date and take the
+  // whole diagnostic down with a RangeError. status is the tool you reach for when
+  // a night has gone wrong; it must not be the first thing to die (run #23).
+  const teleBase = new Date(
+    `${String(tonight).replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3")}T00:00:00Z`,
+  );
+  if (Number.isNaN(teleBase.getTime())) {
+    warn(`NIGHT=${tonight} is not a real date — cannot work out which 7 days to read`);
   } else {
-    ok(true, `telemetry present on ${teleDays}/7 days, ${teleRows} work(s) tracked`);
+    let teleDays = 0;
+    let teleRows = 0;
+    for (let i = 0; i < 7; i++) {
+      // key format must match src/telemetry.lua: os.date("!%Y-%m-%d")
+      const d = new Date(teleBase);
+      d.setUTCDate(d.getUTCDate() - i);
+      const day = d.toISOString().slice(0, 10);
+      const t = await getEntry<Record<string, { near: number; dwell: number }>>(`ns:telemetry:${day}`);
+      if (t && Object.keys(t).length) { teleDays++; teleRows += Object.keys(t).length; info(`${day}: ${Object.keys(t).length} work(s) tracked`); }
+    }
+    if (teleDays === 0) {
+      warn("no telemetry in the last 7 days — nobody has visited the game, so the LLM has zero attention signal");
+      warn("  fix: open the place with a player and stand near a work for >15s, then wait for the flush");
+    } else {
+      ok(true, `telemetry present on ${teleDays}/7 days, ${teleRows} work(s) tracked`);
+    }
   }
 
   // ---------- 6. Public site ----------
