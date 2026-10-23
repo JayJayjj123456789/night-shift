@@ -302,6 +302,7 @@ before or after. Matching this schema:
   "form": "${FORMS.join(" | ")}",
   "site": { "x": integer -256..256, "z": integer -256..256 },
   "params": { "<one of the parameters listed above>": number 0..1 },
+  "parts": [ { "shape": "...", "size": [w,h,d], "pos": [x,y,z], "rot": [x,y,z] optional, "color": "...", "material": "..." optional, "emissive": number optional, "spin": number optional, "float": number optional } ],
   "journal": "string, 1-280 chars, only the words listed above",
   "risk": "low" | "medium"
 }`;
