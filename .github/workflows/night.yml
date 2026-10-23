@@ -26,6 +26,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # cheap, and it is the class of bug that ate two nights: a workflow that
+      # parses but fails at runtime (bad expression, wrong context, typo in a key)
+      - name: Lint workflows
+        run: |
+          curl -sSL -o /tmp/actionlint.tar.gz \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+          /tmp/actionlint -color
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -40,6 +49,11 @@ jobs:
         working-directory: orchestrator
         run: npm run build
 
+      # hash vectors, chain invariants, constitution rules, signature round-trip
+      - name: Test
+        working-directory: orchestrator
+        run: node --test test/night.test.js
+
       - name: Run night
         working-directory: orchestrator
         env:
@@ -48,6 +62,7 @@ jobs:
           LLM_BASE: ${{ secrets.LLM_BASE }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          NS_SIGNING_KEY: ${{ secrets.NS_SIGNING_KEY }}
         run: |
           NIGHT="${{ github.event.inputs.night }}"
           if [ -z "$NIGHT" ]; then NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d); fi
@@ -55,10 +70,10 @@ jobs:
           echo "NIGHT=$NIGHT"
           node dist/index.js
 
-      # DataStore is the truth; site/log.jsonl is derived from it. Rebuild before
-      # anyone checks the file, so a night that ran while a push was failing still
+      # DataStore is the truth; site/ is derived from it. Rebuild before anyone
+      # checks the files, so a night that ran while a push was failing still
       # lands, and a hesitation that never wrote a log line still gets published.
-      - name: Resync site log from DataStore
+      - name: Resync site from DataStore
         if: always()
         working-directory: orchestrator
         env:
@@ -88,12 +103,12 @@ jobs:
           export NIGHT
           node dist/status.js
 
-      - name: Commit log + previews
+      - name: Commit log + previews + raw + telemetry + pubkey
         id: commit
         if: always()
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          file_pattern: "site/log.jsonl site/previews/*.svg"
+          file_pattern: "site/log.jsonl site/previews/*.svg site/raw/*.json site/telemetry.jsonl site/pubkey.pem"
           commit_message: "night shift: ${{ github.run_id }}"
 
       # A push from GITHUB_TOKEN cannot trigger another workflow, so the Pages
