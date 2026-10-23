@@ -144,7 +144,7 @@ Signatures cover it for signed works — after the wipe, everything is signed.
 **Worth watching:** the prompt should eventually summarise old works rather than
 list them all.
 
-## S1 — rotating the signing key bricks the pipeline
+## S1 — rotating the signing key bricks the pipeline — **fixed**
 
 `writePublicKey()` overwrites `site/pubkey.pem` with whatever key is in
 `NS_SIGNING_KEY`. `resync` verifies every signed work against **that** key and
@@ -160,12 +160,26 @@ The pipeline does not degrade; it stops, permanently, with an error that looks
 exactly like tampering. And there is nothing in the code that says "this is a key
 rotation" — it is indistinguishable from someone editing history.
 
-**Open.** The fix is small and worth doing before the key is ever rotated: publish
-keys append-only (`site/pubkeys/{fingerprint}.pem`), keep `pubkey.pem` as the
-current one for the site, and have `resync` accept a signature that verifies
-against *any* published key. Until then the rule is: **never regenerate
-`NS_SIGNING_KEY`** — losing the private key is survivable (works become unsigned),
-replacing it is not.
+**Fixed.** Keys are now append-only and a signature is valid if it verifies
+against **any** published key:
+
+| where | what |
+|---|---|
+| `site/pubkeys/{fingerprint}.pem` | one file per key ever used, never deleted |
+| `site/pubkey.pem` | the CURRENT key, for anything that already reads it |
+| `ns:pubkeys` | `[{fp, pem}]` in the DataStore — the authoritative history, because the store is the truth |
+
+`resync` and `status` verify against the whole ring, so a rotation adds a key
+instead of invalidating the old ones. Proven: with a fresh key written into the
+ring, the existing work's signature still verifies (`true`), while the same
+signature against the new key alone returns `null` — the brick, reproduced and
+then removed. A tampered hash fails against the whole ring, so the ring does not
+weaken the attestation.
+
+The rule that remains: **losing** the private key is survivable (works become
+unsigned, nothing breaks). Rotating it is now survivable too, but a work signed
+by a key that was never published cannot be verified by anyone, ever — so publish
+first, rotate second.
 
 ## S2 — the game and the site can disagree and nothing notices
 

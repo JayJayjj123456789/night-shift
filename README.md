@@ -573,6 +573,21 @@ node -e "const{createPublicKey,verify}=require('node:crypto'); ..."   # หร�
 - `npm run status` รายงาน `N/N works signed with Ed25519 and verified`
 - `npm run resync` exit **3** ถ้า signature ไม่ตรง (= entry ถูกแก้หลังเซ็น) แยกจาก exit 2 ที่ chain พัง
 
+### key ring — หมุน key ได้โดยไม่ทำให้ของเก่าตาย
+เดิม verify ทุก signature กับ key ที่ "ปัจจุบัน" เท่านั้น พอ regenerate `NS_SIGNING_KEY` คืนถัดไปจะเขียนทับ `pubkey.pem` → **signature เก่าทั้งหมด verify ไม่ผ่าน** → resync exit 3 → workflow แดง และแดงแบบนั้นตลอดไป เพราะ signature เก่าไม่มีทางผ่าน key ใหม่ มันไม่ degrade มันหยุด และหน้าตาเหมือนมีคนแก้ประวัติ
+
+ตอนนี้ key ถูกเก็บแบบ append-only และ signature ผ่านถ้ามัน verify กับ key ตัวใดตัวหนึ่งใน ring:
+
+| ที่ | อะไร |
+|---|---|
+| `site/pubkeys/{fingerprint}.pem` | ไฟล์ละ key ไม่เคยลบ |
+| `site/pubkey.pem` | key ปัจจุบัน (สำหรับคนที่อ่านไฟล์นี้อยู่แล้ว) |
+| `ns:pubkeys` | `[{fp, pem}]` ใน DataStore — ประวัติตัวจริง เพราะ store คือ source of truth |
+
+พิสูจน์แล้ว: ใส่ key ใหม่เข้า ring → signature ของงานเดิมยัง verify ผ่าน (`true`) แต่ถ้าเช็คกับ key ใหม่ตัวเดียวจะได้ `null` — คือตัว brick ที่ถูกถอดออก · และ hash ที่ถูกแก้ยัง fail กับทั้ง ring แปลว่า ring ไม่ได้ทำให้ attestation อ่อนลง
+
+**กติกายังเหลือข้อเดียว:** key ที่เซ็นงานไปแล้วแต่ไม่เคยถูก publish จะ verify ไม่ได้ตลอดกาล — publish ก่อน หมุนทีหลัง
+
 ## ยังค้าง — workflow v4 (ไฟล์พร้อมแปะที่ `~/Downloads/night.yml`)
 
 workflow ที่รันอยู่จริงคือ v3 ซึ่งทำงานได้ครบ แต่มีรูสองรูที่ทำให้ "คืนหายไปโดยไม่มีใครรู้" — ทั้งคู่แก้ใน v4:

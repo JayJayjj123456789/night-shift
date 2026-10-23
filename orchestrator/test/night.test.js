@@ -460,6 +460,35 @@ test("an impossible NIGHT degrades instead of throwing", () => {
 
 // ---------------------------------------------------------------- signatures
 
+test("a signature survives a key rotation — the ring is the whole reason", () => {
+  // Rotating NS_SIGNING_KEY used to overwrite pubkey.pem, which made every
+  // signature ever made fail, resync exit 3, and every following night fail too.
+  // It looked exactly like someone editing history. Keys are now append-only and
+  // a signature is valid if ANY published key accepts it.
+  const { signHash, verifyWithAny, fingerprint, publicKeyPem } = require("../dist/sign.js");
+  const { generateKeyPairSync, createPublicKey } = require("node:crypto");
+
+  const hash = "79f9933f66b06eb3";
+  const sig = signHash(hash); // signed with the test key (key A)
+  assert.ok(sig, "the test configures a signing key");
+  const pubA = publicKeyPem();
+  assert.ok(pubA);
+
+  // a brand new key — what regenerating the secret produces
+  const b = generateKeyPairSync("ed25519");
+  const pubB = createPublicKey(b.privateKey).export({ type: "spki", format: "pem" }).toString();
+
+  assert.notStrictEqual(fingerprint(pubA), fingerprint(pubB), "different keys, different ids");
+  assert.strictEqual(fingerprint(pubA), fingerprint(pubA.trim()), "fingerprint ignores whitespace");
+
+  // alone, the new key cannot vouch for an old signature — this is the brick
+  assert.strictEqual(verifyWithAny([pubB], hash, sig), null);
+  // with the old key still in the ring, it verifies — this is the fix
+  assert.ok(verifyWithAny([pubB, pubA], hash, sig));
+  // and a tampered hash never verifies, no matter how many keys are in the ring
+  assert.strictEqual(verifyWithAny([pubB, pubA], "0000000000000000", sig), null);
+});
+
 test("signing binds the signature to the hash and nothing else", () => {
   const sig = signHash("a97e2d85061b6365");
   assert.ok(sig, "a key is configured for this test");

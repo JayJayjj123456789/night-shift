@@ -14,7 +14,7 @@ import "./env";
 import { getEntry, putEntry } from "./datastore";
 import { verifyChain } from "./chain";
 import { renderPreview } from "./preview";
-import { publicKeyPem, verifyHash } from "./sign";
+import { allKeys, verifyWithAny } from "./sign";
 import type { State, Work } from "./schema";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -115,13 +115,13 @@ export async function resync(works: Work[], head: string): Promise<ResyncReport>
   // signatures, when a public key has been published. Unsigned entries are
   // history from before signing existed — they are not failures. A signature
   // that does not verify is.
-  const pub = publicKeyPem();
+  const keys = await allKeys();
   const badSigs: string[] = [];
   let signed = 0;
-  if (pub) {
+  if (keys.length) {
     for (const w of sorted) {
       if (!w.sig) continue;
-      if (verifyHash(w.hash, w.sig, pub)) signed++;
+      if (verifyWithAny(keys, w.hash, w.sig)) signed++;
       else badSigs.push(w.id);
     }
   }

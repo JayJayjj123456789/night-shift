@@ -7,7 +7,7 @@ import { computeHash } from "./hash";
 import { assertConstitution, freeSpot, OUTPUT_FORMS } from "./constitution";
 import { askLLM, readTelemetry } from "./llm";
 import { renderPreview } from "./preview";
-import { signHash, writePublicKey } from "./sign";
+import { signHash, writePublicKey, publishPublicKey } from "./sign";
 
 /** One model answer, kept whether it was accepted or not. */
 export type RawAttempt = {
@@ -221,7 +221,8 @@ export async function runNight(): Promise<void> {
 
   const attempts: RawAttempt[] = [];
   try {
-    writePublicKey(); // publish site/pubkey.pem the first time a key is present
+    writePublicKey(); // site/pubkey.pem (current) + site/pubkeys/{fp}.pem
+    await publishPublicKey(); // append-only ring in the DataStore, so a rotation cannot brick it
     const telemetry = await readTelemetry(state);
 
     // One shot used to be the whole story: if the model broke a rule, the night

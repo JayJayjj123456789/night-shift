@@ -2,7 +2,7 @@
 // Usage: npm run status   (reads .env via env.ts)
 import "./env";
 import { getEntry, getNight } from "./datastore";
-import { publicKeyPem, verifyHash } from "./sign";
+import { allKeys, verifyWithAny } from "./sign";
 import { verifyChain } from "./chain";
 import { createHash } from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
@@ -94,10 +94,10 @@ async function main() {
   if (state.journalHead !== prev) chainOk = false;
 
   // signatures: a hash chain alone is self-referential, a signature is not
-  const pub = publicKeyPem();
-  if (pub) {
+  const keys = await allKeys();
+  if (keys.length) {
     const signed = workDocs.filter((w) => w.sig);
-    const bad = signed.filter((w) => !verifyHash(w.hash, w.sig as string, pub)).map((w) => w.id);
+    const bad = signed.filter((w) => !verifyWithAny(keys, w.hash, w.sig as string)).map((w) => w.id);
     if (bad.length) {
       ok(false, `${bad.length} signature(s) do not verify: ${bad.join(", ")}`, "entry changed after signing");
       chainOk = false;
