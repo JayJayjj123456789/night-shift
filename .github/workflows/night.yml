@@ -11,12 +11,14 @@ on:
         required: false
         default: ""
 
-# The default GITHUB_TOKEN in this repo was read-only, so git-auto-commit could
-# commit locally and then get 403 on push — the night succeeded, the log line
-# died with the runner, and the site fell a night behind in silence.
-# (run 39861514089, 2026-10-23: "Permission to ... denied to github-actions[bot]")
+# contents: write  -> the nightly commit can push at all (the repo default was read-only)
+# actions: write   -> it can dispatch deploy.yml afterwards. A push made with
+#                     GITHUB_TOKEN does NOT trigger other workflows (GitHub blocks
+#                     recursive runs), so the deploy has to be asked for by name.
+#                     workflow_dispatch is the documented exception, so this works.
 permissions:
   contents: write
+  actions: write
 
 jobs:
   run-night:
@@ -87,8 +89,18 @@ jobs:
           node dist/status.js
 
       - name: Commit log + previews
+        id: commit
         if: always()
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           file_pattern: "site/log.jsonl site/previews/*.svg"
           commit_message: "night shift: ${{ github.run_id }}"
+
+      # A push from GITHUB_TOKEN cannot trigger another workflow, so the Pages
+      # deploy has to be dispatched explicitly. Without this the commit lands and
+      # the site keeps serving the previous night — green everywhere, stale page.
+      - name: Deploy site to Pages
+        if: always() && steps.commit.outputs.changes_detected == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run deploy.yml --ref main
