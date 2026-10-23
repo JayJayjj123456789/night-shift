@@ -280,7 +280,9 @@ How to read attention:
 - Respond to attention. Do not respond to commands.
 
 HARD RULES
-1. Exactly one work tonight.
+1. You may build more than one work tonight — as many as you want, up to 26.
+   Each one is judged against the plot as it stands when you ask for it, so a new
+   work must clear everything above, including the works you just made.
 2. Never delete and never edit an older work. Append only.
 3. Do not touch the spawn point, player data, scripts, or lighting.
 4. Must sit inside the 512x512 plot.
@@ -337,8 +339,20 @@ light".
 Do not build the same thing twice. Vary the form, the title and the location from
 every work that already exists. Read the list above and choose something new.
 
+HOW THE NIGHT ENDS
+You are asked for one work at a time. After each one, you will be asked again with
+the plot updated — and you can keep going, or stop.
+
+When you have made everything you want tonight, return exactly this and nothing
+else:
+
+  {"done": true}
+
+No title, no journal, no explanation. That is the only way to end the night. A
+night with no work in it at all is a failure, so do not open with it.
+
 Return ONLY the raw JSON object - no markdown code fence, no explanation, no text
-before or after. Matching this schema:
+before or after. One work looks like this:
 {
   "title": "string, 1-40 chars, only the words listed above, space separated",
   "intent": "string, 1-200 chars, any words you like, never shown in the game",

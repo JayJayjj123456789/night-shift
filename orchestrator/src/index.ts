@@ -6,6 +6,7 @@ import { getEntry, putEntry, publish, getNight } from "./datastore";
 import { computeHash } from "./hash";
 import { assertConstitution, freeSpot, OUTPUT_FORMS } from "./constitution";
 import { askLLM, readTelemetry } from "./llm";
+import type { Attention } from "./llm";
 import { renderPreview } from "./preview";
 import { signHash, writePublicKey, publishPublicKey } from "./sign";
 
@@ -188,8 +189,59 @@ function voidHint(state: State): string {
   return ` Use exactly this site: {"x": ${spot.x}, "z": ${spot.z}} and form "${form}".`;
 }
 
+/** A work id is n{night}-{a..z}, so 26 is the ceiling, not a preference. */
+const MAX_WORKS_PER_NIGHT = 26;
+
+/**
+ * The workflow gives this job 20 minutes. A greedy night on a free-tier rate
+ * limit can spend all of them, so the loop stops itself well before that and
+ * keeps whatever it has already built — a night that made nine things and ran
+ * out of time is a night that made nine things.
+ */
+const NIGHT_BUDGET_MS = 12 * 60 * 1000;
+
+type NextWork =
+  | { kind: "work"; d: Decision }
+  | { kind: "stop" }
+  | { kind: "fail"; reason: string };
+
+/**
+ * Ask the model for one work, with the plot as it currently stands.
+ *
+ * The night is a conversation now, not a single question: it answers, the plot
+ * changes, it is asked again. It ends the night by answering {"done": true} —
+ * the only sentence in this system that is not a work.
+ */
+async function nextWork(
+  state: State,
+  telemetry: Attention[],
+  attempts: RawAttempt[],
+): Promise<NextWork> {
+  let rejection = "";
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const raw = await askLLM(state, telemetry, rejection || undefined, (r) => {
+      attempts.push({ attempt: attempts.length + 1, prompt: r.prompt, content: r.content });
+    });
+    if (raw && typeof raw === "object" && (raw as { done?: unknown }).done === true) {
+      return { kind: "stop" };
+    }
+    try {
+      const parsed = Decision.parse(raw);
+      assertConstitution(parsed, state);
+      return { kind: "work", d: parsed };
+    } catch (e) {
+      rejection = describeRejection(e);
+      if (rejection.includes("void is not available")) rejection += voidHint(state);
+      const last = attempts[attempts.length - 1];
+      if (last) last.rejection = rejection;
+      console.warn(`attempt ${attempt} rejected: ${rejection}`);
+    }
+  }
+  return { kind: "fail", reason: `no valid decision after 3 attempts — last: ${rejection}` };
+}
+
 export async function runNight(): Promise<void> {
-  const state = (await getEntry<State>("ns:state")) ?? {
+  let state = (await getEntry<State>("ns:state")) ?? {
     night: 0,
     journalHead: "genesis",
     works: [],
@@ -225,74 +277,86 @@ export async function runNight(): Promise<void> {
     await publishPublicKey(); // append-only ring in the DataStore, so a rotation cannot brick it
     const telemetry = await readTelemetry(state);
 
-    // One shot used to be the whole story: if the model broke a rule, the night
-    // fell straight to hesitate(). On 2026-10-24 it wrote "garden" — a word the
-    // 200-word allowlist does not contain — and a night with a perfectly good
-    // idea became a void at (0,0). Hand the rejection back and let it correct
-    // itself once before giving up.
-    let d: Decision | null = null;
-    let rejection = "";
-    // Three, not two: a truncated answer burns an attempt, and a night with only
-    // two tries spends them on noise.
-    for (let attempt = 1; attempt <= 3 && !d; attempt++) {
-      const raw = await askLLM(state, telemetry, rejection || undefined, (r) => {
-        attempts.push({ attempt: attempts.length + 1, prompt: r.prompt, content: r.content });
-      });
+    // ── the night is a loop ────────────────────────────────────────────────
+    // It used to be one question and one answer. Now the model is asked for a
+    // work, sees the plot with that work in it, and decides whether to make
+    // another — up to 26, because that is how many id suffixes a night has.
+    const t0 = Date.now();
+    let built = 0;
+    let lastError = "";
+
+    while (built < MAX_WORKS_PER_NIGHT && Date.now() - t0 < NIGHT_BUDGET_MS) {
+      let r: NextWork;
       try {
-        const parsed = Decision.parse(raw);
-        assertConstitution(parsed, state);
-        d = parsed;
+        r = await nextWork(state, telemetry, attempts);
       } catch (e) {
-        rejection = describeRejection(e);
-        if (rejection.includes("void is not available")) rejection += voidHint(state);
-        const last = attempts[attempts.length - 1];
-        if (last) last.rejection = rejection;
-        console.warn(`attempt ${attempt} rejected: ${rejection}`);
+        lastError = String(e);
+        break;
       }
+      if (r.kind === "stop") {
+        console.log(`the shift stopped after ${built} work(s)`);
+        break;
+      }
+      if (r.kind === "fail") {
+        lastError = r.reason;
+        break;
+      }
+
+      const d = r.d;
+      const prevHash = state.journalHead;
+
+      // The id must be unique across the whole plot, not just within a night.
+      // "n{NIGHT}-a" collided with an earlier work from the same night (a re-run
+      // overwrote the old entry and left two refs with the same id in state).
+      // Take the next free letter suffix.
+      const usedIds = new Set(state.works.map((w) => w.id));
+      const suffix = "abcdefghijklmnopqrstuvwxyz".split("").find(
+        (c) => !usedIds.has(`n${getNight()}-${c}`),
+      );
+      if (!suffix) throw new Error(`too many works for night ${getNight()}`);
+      const workId = `n${getNight()}-${suffix}`;
+
+      const hash = computeHash(
+        getNight(), d.title, d.form, d.site.x, d.site.z, d.journal, prevHash, d.parts,
+      );
+
+      const work: Work = {
+        ...d,
+        id: workId,
+        night: getNight(),
+        seed: getNight(),
+        prevHash,
+        hash,
+        sig: signHash(hash) ?? undefined,
+        builderVersion: 1,
+      };
+
+      await putEntry(`ns:work:${work.id}`, work);
+      const nextState: State = {
+        ...state,
+        night: getNight(),
+        journalHead: hash,
+        works: [...state.works, { id: work.id, site: work.site, form: work.form, title: work.title }],
+      };
+      await putEntry("ns:state", nextState);
+      state = nextState;
+
+      await publish("nightshift", { type: "new_work", id: work.id, site: work.site, form: work.form });
+
+      await publishWork(work);
+      await writeRaw(work.id, "built", "", attempts);
+      built++;
+      console.log(
+        `built ${work.id} — ${d.form} at (${d.site.x}, ${d.site.z}) hash=${hash}`
+        + ` [${built}/${MAX_WORKS_PER_NIGHT}, ${Math.round((Date.now() - t0) / 1000)}s]`,
+      );
     }
-    if (!d) throw new Error(`no valid decision after 3 attempts — last: ${rejection}`);
 
-    const prevHash = state.journalHead;
-
-    // The id must be unique across the whole plot, not just within a night.
-    // "n{NIGHT}-a" collided with an earlier work from the same night (a re-run
-    // overwrote the old entry and left two refs with the same id in state).
-    // Take the next free letter suffix.
-    const usedIds = new Set(state.works.map((w) => w.id));
-    const suffix = "abcdefghijklmnopqrstuvwxyz".split("").find(
-      (c) => !usedIds.has(`n${getNight()}-${c}`),
-    );
-    if (!suffix) throw new Error(`too many works for night ${getNight()}`);
-    const workId = `n${getNight()}-${suffix}`;
-
-    const hash = computeHash(
-      getNight(), d.title, d.form, d.site.x, d.site.z, d.journal, prevHash, d.parts,
-    );
-
-    const work: Work = {
-      ...d,
-      id: workId,
-      night: getNight(),
-      seed: getNight(),
-      prevHash,
-      hash,
-      sig: signHash(hash) ?? undefined,
-      builderVersion: 1,
-    };
-
-    await putEntry(`ns:work:${work.id}`, work);
-    await putEntry("ns:state", {
-      ...state,
-      night: getNight(),
-      journalHead: hash,
-      works: [...state.works, { id: work.id, site: work.site, form: work.form, title: work.title }],
-    });
-
-    await publish("nightshift", { type: "new_work", id: work.id, site: work.site, form: work.form });
-
-    await publishWork(work);
-    await writeRaw(work.id, "built", "", attempts);
-    console.log(`built ${work.id} — ${d.form} at (${d.site.x}, ${d.site.z}) hash=${hash}`);
+    if (built === 0) {
+      // Nothing at all was made: that is exactly the night hesitate() exists for.
+      throw new Error(lastError || "the shift produced no work");
+    }
+    console.log(`night ${getNight()} — ${built} work(s) on the plot`);
   } catch (e) {
     console.warn("runNight failed, hesitating:", e);
     await hesitate(state, String(e), attempts);
