@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Night Shift — 3D Plot</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #0a0a0a; color: #ccc; overflow: hidden; height: 100vh; }
+  #status { position: fixed; top: 12px; left: 16px; font-size: .8rem; color: #888; background: rgba(0,0,0,.6); padding: 6px 10px; border-radius: 6px; z-index: 5; }
+  #status b { color: #4c4; }
+  .nav { position: fixed; top: 12px; right: 16px; z-index: 6; }
+  .nav a { color: #4c4; text-decoration: none; font-size: .8rem; margin-left: 1rem; }
+  .hint { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); font-size: .75rem; color: #666; z-index: 5; }
+  .tooltip { position: fixed; background: #111; border: 1px solid #333; padding: .5rem .7rem; border-radius: 6px; font-size: .8rem; pointer-events: none; display: none; z-index: 10; max-width: 300px; white-space: pre; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<div id="status">กำลังโหลด…</div>
+<div class="nav"><a href="index.html">journal</a><a href="timeline.html">2D timeline</a></div>
+<div class="hint">ลากเพื่อหมุน · scroll เพื่อซูม · เอาเมาส์ไปชี้ที่ชิ้นงาน</div>
+<div class="tooltip" id="tip"></div>
+
+<script type="importmap">
+{ "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const SRC = new URLSearchParams(location.search).get('src') || 'log.jsonl';
+const FORM_META = {
+  monolith: { color: 0xe8e8e8, baseH: 3.0, ys: 1.0 },
+  garden:   { color: 0x7fb069, baseH: 1.2, ys: 1.0 },
+  machine:  { color: 0xf59e0b, baseH: 1.8, ys: 1.0 },
+  text:     { color: 0x60a5fa, baseH: 1.0, ys: 1.0 },
+  light:    { color: 0xfde68a, baseH: 2.4, ys: 1.3 },
+  void:     { color: 0x64748b, baseH: 0.6, ys: 1.0 },
+};
+
+async function main() {
+  const res = await fetch(SRC);
+  if (!res.ok) { status.textContent = 'error: ' + await res.text(); return; }
+  const text = await res.text();
+  const entries = text.trim().split('\n').filter(Boolean).map(JSON.parse);
+  entries.sort((a,b) => a.night - b.night || (a.id < b.id ? -1 : 1));
+  document.getElementById('status').innerHTML =
+    `${SRC === 'sim.jsonl' ? '<b>SIM</b> 30 nights' : `<b>${entries.length}</b> real works`} · ${entries.map(e=>e.form).filter((v,i,a)=>a.indexOf(v)===i).length} forms — <span>ลากหมุนได้</span>`;
+
+  // scene
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0d0d0d);
+  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 2000);
+  camera.position.set(520, 520, 520);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  document.body.appendChild(renderer.domElement);
+
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 0, 0);
+  controls.enableDamping = true;
+
+  // light
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 1.0));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+  sun.position.set(200, 300, 150);
+  scene.add(sun);
+  scene.add(new THREE.AmbientLight(0x404040, 0.8));
+
+  // ground grid 512x512
+  const grid = new THREE.GridHelper(512, 16, 0x333333, 0x222222);
+  grid.position.y = 0;
+  scene.add(grid);
+  const axes = new THREE.Group();
+  const amat = new THREE.LineBasicMaterial({ color: 0x4c4 });
+  axes.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-256,0,0),new THREE.Vector3(256,0,0)]), amat));
+  axes.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,-256),new THREE.Vector3(0,0,256)]), amat));
+  scene.add(axes);
+
+  // build each work as a 3D box scaled by form
+  const tip = document.getElementById('tip');
+  const group = new THREE.Group();
+  entries.forEach(e => {
+    const meta = FORM_META[e.form] || FORM_META.void;
+    const h = meta.baseH * (meta.ys * ((e.params && e.params.height) || 0.5));
+    const size = 6 + (e.form === 'void' ? 0 : 6);
+    const geo = new THREE.BoxGeometry(size, Math.max(1, h), size);
+    const mat = new THREE.MeshStandardMaterial({ color: meta.color, roughness: 0.6, metalness: 0.1 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(e.site.x, h / 2, e.site.z);
+    // emitter for 'light'
+    if (e.form === 'light') {
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(2, 12, 12),
+        new THREE.MeshBasicMaterial({ color: 0xfde68a }));
+      bulb.position.set(0, h + 2, 0);
+      mesh.add(bulb);
+    }
+    mesh.userData = { id: e.id, form: e.form, night: e.night, title: e.title, journal: e.journal };
+    mesh.addEventListener && null;
+    group.add(mesh);
+    // label
+    // (labels disabled to keep drag smooth; tooltip carries info)
+  });
+  scene.add(group);
+
+  // hide floor grid under objects - fine
+
+  // raycast tooltip
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+  renderer.domElement.addEventListener('mousemove', (ev) => {
+    mouse.x = (ev.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(ev.clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(group.children, true);
+    if (hits.length) {
+      let o = hits[0].object;
+      while (o && !o.userData.id) o = o.parent;
+      if (o && o.userData.id) {
+        const d = o.userData;
+        tip.textContent = `${d.id} · ${d.form} · night ${d.night}\n${d.title}\n${d.journal}`;
+        tip.style.display = 'block';
+        tip.style.left = (ev.clientX + 14) + 'px';
+        tip.style.top = (ev.clientY + 14) + 'px';
+      }
+    } else {
+      tip.style.display = 'none';
+    }
+  });
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
+  animate();
+}
+
+main().catch(e => { document.getElementById('status').textContent = 'error: ' + e; });
+</script>
+</body>
+</html>
