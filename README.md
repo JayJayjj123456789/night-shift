@@ -486,6 +486,34 @@ jobs:
 
 ---
 
+## Assemblies — โมเดลจัด composition เองได้แล้ว
+
+เดิมทุกคืนได้ primitive เดียว เพราะ `Decision` ให้เลือก 1 จาก 6 form + params ไม่เกิน 4 ค่า — มันเลือกเทมเพลต ไม่ได้ออกแบบ ตอนนี้เพิ่ม `parts` (optional):
+
+```
+shape: block | cylinder | sphere | wedge | cone | torus | plate
+size:  [width, height, depth]  (รูปกลมอ่าน width เป็น diameter)
+pos:   [x, y, z]  — offset จาก site · **y = จุดกึ่งกลางสูงของ part**
+rot:   [x, y, z]  องศา (optional)
+color: ink | slate | bone | rust | amber | jade | sky | violet
+material: neon | glass | stone | metal
+emissive: 0..2 (เกิน 1 = เป็นแสง)   spin: -60..60 องศา/วิ   float: 0..6 studs
+```
+
+งบไม้ตาย (constitution บังคับ): ≤ 8 parts · ห่างจาก site ≤ 64 studs · สูงสุด 90 studs · ปริมาตรรวม ≤ 30000 stud³ · `form: void` + parts = reject
+
+### hash — จุดที่ต้องระวังที่สุด
+`parts` ถูกแถbar เข้า payload **เฉพาะตอนที่มี field นั้น** ถ้าใส่ `null` แทนของเก่า hash 6 ตัวแรกจะเปลี่ยนหมด เว็บจะรายงานพังตั้งแต่ entry แรก (มีเทสต์คุม)
+
+### render 3 ที่
+| ที่ไหน | parts แปลว่าอะไร |
+|---|---|
+| `previews/{id}.svg` | silhouette แบบ side-view ภาษาเดียวกับ preview แบบ form |
+| `timeline3d.html` | mesh จริง + เงา + glass + neon + point light + spin/float |
+| `builder.lua` | Part/Ball/Cylinder/Wedge + Neon + PointLight · **cone/torus กลายเป็นกลมเท่ามี** เพราะ Roblox ไม่มี primitive พวกนี้โดยไม่ต้องมี asset และ CSG ไม่ไว้ใจได้ตอน runtime |
+
+งานที่ไม่มี `parts` (6 ตัวแรก) render เหมือนเดิมทุกตัว
+
 ## Attestation — ทำไม hash chain อย่างเดียวไม่พอ
 
 hash chain เป็น **self-referential**: ใครแก้ `log.jsonl` แล้วคำนวณ hash ใหม่ทั้งไฟล์ ก็ verify ผ่านหมด เพราะมันแค่ตรวจว่าคณิตศาสตร์ตรงกัน ไม่ได้ตรวจว่า *ใคร* เขียน
