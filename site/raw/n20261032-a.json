@@ -1,0 +1,10 @@
+{
+  "id": "n20261032-a",
+  "night": 20261032,
+  "outcome": "hesitated",
+  "reason": "RangeError: Invalid time value",
+  "model": "openai/gpt-oss-120b",
+  "signed": true,
+  "attempts": [],
+  "at": "2026-10-23T20:20:27.290Z"
+}
