@@ -432,6 +432,24 @@ test("a malformed NIGHT is refused before it reaches a hash", () => {
   process.env.NIGHT = saved;
 });
 
+test("the workflow's NIGHT validator rejects what would poison the chain", () => {
+  // this lived as `node -e '...'` inside night.yml until shellcheck SC2016
+  // failed the Lint step and skipped an entire night (run #21)
+  const { validateNight } = require("../tools/validate-night.js");
+
+  for (const good of ["20261024", "20261025", "20261130", "20240229"]) {
+    const r = validateNight(good);
+    assert.strictEqual(r.ok, true, `${good} should be valid`);
+    assert.strictEqual(r.night, Number(good));
+  }
+  // new Date("2026-10-32") rolls over to 2026-11-01 instead of throwing
+  for (const bad of ["20261032", "20260231", "20260229", "2026-10-24", "2026102", "202610240", "abcd1024", ""]) {
+    const r = validateNight(bad);
+    assert.strictEqual(r.ok, false, `"${bad}" must be refused`);
+    assert.ok(/not YYYYMMDD|not a real date/.test(r.reason), `"${bad}" gave: ${r.reason}`);
+  }
+});
+
 test("an impossible NIGHT degrades instead of throwing", () => {
   // October 32 is not a date; readTelemetry used to throw RangeError and the
   // whole night became a void (run #14, night 20261032)
