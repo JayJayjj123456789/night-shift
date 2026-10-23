@@ -419,6 +419,19 @@ test("every page uses the shared hash walk, not its own copy", () => {
   assert.ok(/base\.push\(e\.parts\)/.test(chain), "chain.js must append parts when present");
 });
 
+test("a malformed NIGHT is refused before it reaches a hash", () => {
+  // a typo in a manual dispatch used to become night:NaN in the payload
+  const { getNight } = require("../dist/datastore.js");
+  const saved = process.env.NIGHT;
+  for (const bad of ["2026-10-24", "abc", "2026102", "202610240"]) {
+    process.env.NIGHT = bad;
+    assert.throws(() => getNight(), /not YYYYMMDD/, `"${bad}" must be refused`);
+  }
+  process.env.NIGHT = "20261024";
+  assert.strictEqual(getNight(), 20261024);
+  process.env.NIGHT = saved;
+});
+
 test("an impossible NIGHT degrades instead of throwing", () => {
   // October 32 is not a date; readTelemetry used to throw RangeError and the
   // whole night became a void (run #14, night 20261032)

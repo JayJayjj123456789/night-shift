@@ -51,5 +51,12 @@ export async function publish(topic: string, payload: unknown): Promise<void> {
 }
 
 export function getNight(): number {
-  return Number(mustEnv("NIGHT"));
+  const raw = mustEnv("NIGHT");
+  // A typo in a manual dispatch used to reach computeHash as NaN, and a work
+  // whose night is NaN chains forever without anyone being able to order it.
+  // Refuse at the door instead.
+  if (!/^\d{8}$/.test(raw)) {
+    throw new Error(`NIGHT='${raw}' is not YYYYMMDD — refusing to build a night on a malformed date`);
+  }
+  return Number(raw);
 }

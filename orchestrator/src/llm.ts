@@ -406,7 +406,13 @@ export async function askLLM(
         // Groq TPM limit (8000 tokens/min on the free tier). A 1500-token request
         // with a ~1000-token prompt does not fit three times a minute, so back off
         // instead of burning the retry budget on instant failures.
-        const waitMs = 15_000 + attempt * 10_000;
+        //
+        // Honour Retry-After when the provider sends one — it knows when the
+        // window resets and a blind 15s can land inside the same window twice.
+        // Capped at 60s so a hostile header cannot stall the night.
+        const after = Number(r.headers.get("retry-after"));
+        const hinted = Number.isFinite(after) && after > 0 ? Math.min(after, 60) * 1000 : 0;
+        const waitMs = hinted || 15_000 + attempt * 10_000;
         await new Promise((res) => setTimeout(res, waitMs));
         throw new Error(`LLM 429 rate limited, waited ${waitMs}ms`);
       }

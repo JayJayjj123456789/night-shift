@@ -24,7 +24,17 @@
   .tooltip b { color: #eee; }
   .tooltip .dim { color: #777; }
   canvas { display: block; }
+
+  /* ?embed=1 — used by index.html, which puts this plot in a frame and draws
+     its own header, legend and footer around it. One 3D implementation, no copy. */
+  html.embed #status, html.embed .nav, html.embed .legend,
+  html.embed #scale, html.embed .hint { display: none; }
 </style>
+<script>
+  if (new URLSearchParams(location.search).get("embed")) {
+    document.documentElement.classList.add("embed");
+  }
+</script>
 </head>
 <body>
 <div id="status">กำลังโหลด…</div>
@@ -140,16 +150,21 @@ async function main() {
   const res = await fetch(SRC, { cache: 'no-store' });
   if (!res.ok) { status.textContent = 'error ' + res.status + ': ' + res.statusText; return; }
   const entries = (await res.text()).trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
-  if (!entries.length) { status.textContent = 'ยังไม่มีชิ้นงาน'; return; }
 
   entries.sort((a, b) => a.night - b.night || (a.id < b.id ? -1 : 1));
 
   const forms = [...new Set(entries.map(e => e.form))].sort();
-  status.innerHTML = isSim
-    ? `<b>SIM</b> ${entries.length} nights · ${forms.length} forms`
-    : `<b>${entries.length}</b> real works · ${forms.length} forms`;
+  // An empty plot is a state, not an error: draw the ground, the grid and the
+  // axis and say so. It used to `return` here, so on a fresh plot the landing
+  // page framed a black rectangle — the first thing anyone sees after a reset.
+  status.innerHTML = !entries.length
+    ? (isSim ? '<b>SIM</b> ยังไม่มีข้อมูล' : 'plot ว่าง · คืนแรกจะเกิดตอน 02:00')
+    : isSim
+      ? `<b>SIM</b> ${entries.length} nights · ${forms.length} forms`
+      : `<b>${entries.length}</b> real works · ${forms.length} forms`;
 
-  (isSim ? $('lnk-sim') : $('lnk-real')).classList.add('on');
+  if (entries.length) (isSim ? $('lnk-sim') : $('lnk-real')).classList.add('on');
+  if (!forms.length) $('legend').style.display = 'none';
 
   // ── scene ──────────────────────────────────────────────────────────────
   const scene = new THREE.Scene();
@@ -199,7 +214,7 @@ async function main() {
   // raw height = form's height character × the work's own params.height.
   // normalised so the tallest column is HEIGHT_MAX and the shortest still reads.
   const raws = entries.map(e => (FORM_META[e.form] || FORM_META.void).baseH * ((e.params && e.params.height) || 0.5));
-  const rawMax = Math.max(...raws);
+  const rawMax = raws.length ? Math.max(...raws) : 1;
 
   const tip = $('tip');
   const group = new THREE.Group();

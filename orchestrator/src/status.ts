@@ -127,6 +127,12 @@ async function main() {
     ok(true, `night ${tonight} already ran (idempotent guard held)`);
   } else if (!drift || drift < 0) {
     warn(`night ${tonight} has NOT run yet — cron should fire at 19:00 UTC / 02:00 TH`);
+    // One missed night is a late cron (GitHub's schedule is best-effort and has
+    // arrived three hours late here). Two is the schedule not firing at all,
+    // which is what happened between 2026-10-22 and 2026-10-24.
+    if (drift !== null && drift <= -2) {
+      warn(`the schedule has missed ${Math.abs(drift)} night(s) — check Actions > Night Shift for a schedule run`);
+    }
   } else {
     // The plot being ahead of the calendar is invisible from the outside: every
     // scheduled run prints "already ran tonight", exits 0, and looks exactly like
