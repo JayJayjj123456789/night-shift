@@ -386,6 +386,20 @@ jobs:
 > เจอแล้ว: `${{ secrets.X }}` ใน workflow ถ้าไปโผล่ในโค้ดที่ commit ผ่าน tool ที่ censor จะกลายเป็น `***` → YAML parse error. แก้ด้วย: สร้าง workflow ผ่าน GitHub web editor (หรือเขียนไฟล์ผ่าน execute_code ที่ไม่โดน censor)
 
 
+## หน้าเว็บ (`site/`) — 4 หน้า
+
+| ไฟล์ | ทำอะไร |
+|---|---|
+| `index.html` | journal — ทุกคืน เรียงใหม่สุดขึ้นก่อน + verify hash chain ฝั่ง client |
+| `timeline.html` | แผนผัง 512×512 (วงกลม = ชิ้นงาน) + กราฟ near/dwell + ตารางทุกคืน |
+| `timeline3d.html` | **plot 3 มิติ** — Three.js + OrbitControls, ลากหมุน/ซูม, hover อ่านบันทึก · `?src=sim.jsonl` = ชุดจำลอง 30 คืน |
+| `architecture.html` | แผนผังระบบทั้งหมด (SVG) |
+
+**3D อ่านยังไง:** แกน X/Z = `site.x`, `site.z` ในแปลงจริง 512×512 · แกน Y = `params.height` ของชิ้นนั้น (สเกลเร่ง ×24 เพราะของจริงเตี้ย 0.3–1.5 stud เทียบพื้น 512 — ถ้าไม่เร่งจะแบนติดพื้นจนมองไม่เห็น) · สี/รูปทรง = form (monolith=แท่ง, garden=ทรงกระบอกเตี้ย, machine=เหลี่ยม 6, text=แผ่นบาง, light=เสาไฟมีดวง, void=ลูกกลม)
+
+**ปิด laptop แล้ว cron ยังรันไหม → รัน.** `night.yml` วิ่งบน GitHub Actions runner (คลาวด์) ไม่ใช่เครื่อง dj · DataStore = Roblox Cloud · หน้าเว็บ = GitHub Pages · เหลือแค่ secret ใน repo ต้องไม่ถูกลบ — sleep/ปิดเครื่อง/เน็ตหลุดที่บ้าน ไม่กระทบ
+
+
 ## Kill switch
 
 - **ปิดชั่วคราว:** GitHub → Actions → Night Shift → Disable workflow

@@ -6,20 +6,38 @@
 <title>Night Shift — 3D Plot</title>
 <style>
   * { box-sizing: border-box; margin: 0; }
-  body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #0a0a0a; color: #ccc; overflow: hidden; height: 100vh; }
-  #status { position: fixed; top: 12px; left: 16px; font-size: .8rem; color: #888; background: rgba(0,0,0,.6); padding: 6px 10px; border-radius: 6px; z-index: 5; }
+  html, body { height: 100%; }
+  body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #08080a; color: #ccc; overflow: hidden; }
+  #status { position: fixed; top: 12px; left: 16px; font-size: .8rem; color: #888; background: rgba(0,0,0,.72); padding: 6px 10px; border-radius: 6px; z-index: 5; }
   #status b { color: #4c4; }
-  .nav { position: fixed; top: 12px; right: 16px; z-index: 6; }
-  .nav a { color: #4c4; text-decoration: none; font-size: .8rem; margin-left: 1rem; }
-  .hint { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); font-size: .75rem; color: #666; z-index: 5; }
-  .tooltip { position: fixed; background: #111; border: 1px solid #333; padding: .5rem .7rem; border-radius: 6px; font-size: .8rem; pointer-events: none; display: none; z-index: 10; max-width: 300px; white-space: pre; }
+  .nav { position: fixed; top: 12px; right: 16px; z-index: 6; display: flex; gap: .35rem; align-items: center; }
+  .nav a, .nav button { color: #4c4; background: rgba(0,0,0,.65); border: 1px solid #1e2a1e; border-radius: 6px; text-decoration: none; font: inherit; font-size: .75rem; padding: 6px 10px; cursor: pointer; }
+  .nav a:hover, .nav button:hover { background: #12200f; }
+  .nav a.on { background: #12200f; border-color: #2e5a2a; color: #7f7; }
+  .hint { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); font-size: .72rem; color: #555; z-index: 5; white-space: nowrap; }
+  .legend { position: fixed; left: 16px; bottom: 52px; z-index: 5; background: rgba(0,0,0,.72); border: 1px solid #1a1a1a; border-radius: 8px; padding: .6rem .7rem; font-size: .72rem; line-height: 1.7; color: #999; min-width: 148px; }
+  #scale { position: fixed; left: 16px; bottom: 16px; z-index: 5; font-size: .68rem; color: #4d4d4d; }
+  .legend div { display: flex; align-items: center; gap: .45rem; }
+  .legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+  .legend .n { color: #666; margin-left: auto; padding-left: .6rem; }
+  .tooltip { position: fixed; background: #0e0e12; border: 1px solid #2a2a35; padding: .55rem .7rem; border-radius: 6px; font-size: .75rem; line-height: 1.5; pointer-events: none; display: none; z-index: 10; max-width: 320px; white-space: pre-wrap; box-shadow: 0 6px 24px rgba(0,0,0,.6); }
+  .tooltip b { color: #eee; }
+  .tooltip .dim { color: #777; }
   canvas { display: block; }
 </style>
 </head>
 <body>
 <div id="status">กำลังโหลด…</div>
-<div class="nav"><a href="index.html">journal</a><a href="timeline.html">2D timeline</a></div>
-<div class="hint">ลากเพื่อหมุน · scroll เพื่อซูม · เอาเมาส์ไปชี้ที่ชิ้นงาน</div>
+<div class="nav">
+  <a href="index.html">journal</a>
+  <a href="timeline.html">2D</a>
+  <a href="timeline3d.html" id="lnk-real">3D real</a>
+  <a href="timeline3d.html?src=sim.jsonl" id="lnk-sim">3D sim 30</a>
+  <button id="reset" title="กลับมุมเริ่มต้น">reset view</button>
+</div>
+<div class="legend" id="legend"></div>
+<div id="scale"></div>
+<div class="hint">ลากหมุน · scroll ซูม · ชี้ที่ชิ้นงานเพื่ออ่านบันทึก</div>
 <div class="tooltip" id="tip"></div>
 
 <script type="importmap">
@@ -34,118 +52,225 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const SRC = new URLSearchParams(location.search).get('src') || 'log.jsonl';
+const isSim = SRC.includes('sim');
+
+// form -> colour + physical character of the object.
+// baseH is the form's real height character (studs); footprint is the ground
+// area it occupies. Both come from the builder, not invented here.
 const FORM_META = {
-  monolith: { color: 0xe8e8e8, baseH: 3.0, ys: 1.0 },
-  garden:   { color: 0x7fb069, baseH: 1.2, ys: 1.0 },
-  machine:  { color: 0xf59e0b, baseH: 1.8, ys: 1.0 },
-  text:     { color: 0x60a5fa, baseH: 1.0, ys: 1.0 },
-  light:    { color: 0xfde68a, baseH: 2.4, ys: 1.3 },
-  void:     { color: 0x64748b, baseH: 0.6, ys: 1.0 },
+  monolith: { color: 0xe8e8e8, baseH: 3.0, footprint: 16, shape: 'box'      },
+  garden:   { color: 0x7fb069, baseH: 1.2, footprint: 26, shape: 'cylinder' },
+  machine:  { color: 0xf59e0b, baseH: 1.8, footprint: 18, shape: 'hex'      },
+  text:     { color: 0x60a5fa, baseH: 1.0, footprint: 22, shape: 'plate'    },
+  light:    { color: 0xfde68a, baseH: 2.4, footprint: 7,  shape: 'spire'    },
+  void:     { color: 0x64748b, baseH: 0.6, footprint: 10, shape: 'sphere'   },
 };
 
+const HEIGHT_MAX = 95;    // tallest column, scene units
+const HEIGHT_MIN = 10;    // floor so nothing is invisible
+const VERTICAL_EXAG = 24; // real height is stretched for readability
+
+const $ = id => document.getElementById(id);
+
+function makeGeometry(meta, h) {
+  const f = meta.footprint;
+  switch (meta.shape) {
+    case 'cylinder': return new THREE.CylinderGeometry(f / 2, f / 2, h, 24);
+    case 'hex':      return new THREE.CylinderGeometry(f / 2, f / 2, h, 6);
+    case 'plate':    return new THREE.BoxGeometry(f, h, 3);
+    case 'spire':    return new THREE.CylinderGeometry(1.5, f / 2, h, 8);
+    case 'sphere':   return new THREE.SphereGeometry(f / 2, 16, 12);
+    default:         return new THREE.BoxGeometry(f, h, f);
+  }
+}
+
 async function main() {
-  const res = await fetch(SRC);
-  if (!res.ok) { status.textContent = 'error: ' + await res.text(); return; }
-  const text = await res.text();
-  const entries = text.trim().split('\n').filter(Boolean).map(JSON.parse);
-  entries.sort((a,b) => a.night - b.night || (a.id < b.id ? -1 : 1));
-  document.getElementById('status').innerHTML =
-    `${SRC === 'sim.jsonl' ? '<b>SIM</b> 30 nights' : `<b>${entries.length}</b> real works`} · ${entries.map(e=>e.form).filter((v,i,a)=>a.indexOf(v)===i).length} forms — <span>ลากหมุนได้</span>`;
+  const status = $('status');
+  const res = await fetch(SRC, { cache: 'no-store' });
+  if (!res.ok) { status.textContent = 'error ' + res.status + ': ' + res.statusText; return; }
+  const entries = (await res.text()).trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+  if (!entries.length) { status.textContent = 'ยังไม่มีชิ้นงาน'; return; }
 
-  // scene
+  entries.sort((a, b) => a.night - b.night || (a.id < b.id ? -1 : 1));
+
+  const forms = [...new Set(entries.map(e => e.form))].sort();
+  status.innerHTML = isSim
+    ? `<b>SIM</b> ${entries.length} nights · ${forms.length} forms`
+    : `<b>${entries.length}</b> real works · ${forms.length} forms`;
+
+  (isSim ? $('lnk-sim') : $('lnk-real')).classList.add('on');
+
+  // ── scene ──────────────────────────────────────────────────────────────
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0d0d0d);
-  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 2000);
-  camera.position.set(520, 520, 520);
+  scene.background = new THREE.Color(0x08080a);
+  scene.fog = new THREE.Fog(0x08080a, 750, 1600);
 
+  const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 1, 4000);
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = true;
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
   document.body.appendChild(renderer.domElement);
 
   const controls = new OrbitControls(camera, renderer.domElement);
-  controls.target.set(0, 0, 0);
   controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.maxPolarAngle = Math.PI / 2 - 0.03; // never dive under the floor
+  controls.minDistance = 40;
+  controls.maxDistance = 1500;
 
-  // light
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 1.0));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-  sun.position.set(200, 300, 150);
+  scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x1a1a1a, 1.1));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+  sun.position.set(240, 420, 180);
   scene.add(sun);
-  scene.add(new THREE.AmbientLight(0x404040, 0.8));
+  const rim = new THREE.DirectionalLight(0x4466ff, 0.55);
+  rim.position.set(-300, 120, -260);
+  scene.add(rim);
 
-  // ground grid 512x512
-  const grid = new THREE.GridHelper(512, 16, 0x333333, 0x222222);
-  grid.position.y = 0;
+  // ground: the real 512×512 build plane
+  const grid = new THREE.GridHelper(512, 16, 0x3d6b3d, 0x243524);
+  grid.position.y = 0.1;
   scene.add(grid);
-  const axes = new THREE.Group();
-  const amat = new THREE.LineBasicMaterial({ color: 0x4c4 });
-  axes.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-256,0,0),new THREE.Vector3(256,0,0)]), amat));
-  axes.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,-256),new THREE.Vector3(0,0,256)]), amat));
-  scene.add(axes);
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(512, 512),
+    new THREE.MeshStandardMaterial({ color: 0x101016, roughness: 1, metalness: 0 })
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -0.6;
+  scene.add(floor);
 
-  // build each work as a 3D box scaled by form
-  const tip = document.getElementById('tip');
+  const axisMat = new THREE.LineBasicMaterial({ color: 0x2e5a2a });
+  const seg = (a, b) => new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), axisMat);
+  scene.add(seg(new THREE.Vector3(-256, 0.2, 0), new THREE.Vector3(256, 0.2, 0)));
+  scene.add(seg(new THREE.Vector3(0, 0.2, -256), new THREE.Vector3(0, 0.2, 256)));
+  scene.add(seg(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, HEIGHT_MAX, 0)));
+
+  // ── build ──────────────────────────────────────────────────────────────
+  // raw height = form's height character × the work's own params.height.
+  // normalised so the tallest column is HEIGHT_MAX and the shortest still reads.
+  const raws = entries.map(e => (FORM_META[e.form] || FORM_META.void).baseH * ((e.params && e.params.height) || 0.5));
+  const rawMax = Math.max(...raws);
+
+  const tip = $('tip');
   const group = new THREE.Group();
-  entries.forEach(e => {
+  const pickable = [];
+
+  entries.forEach((e, i) => {
     const meta = FORM_META[e.form] || FORM_META.void;
-    const h = meta.baseH * (meta.ys * ((e.params && e.params.height) || 0.5));
-    const size = 6 + (e.form === 'void' ? 0 : 6);
-    const geo = new THREE.BoxGeometry(size, Math.max(1, h), size);
-    const mat = new THREE.MeshStandardMaterial({ color: meta.color, roughness: 0.6, metalness: 0.1 });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(e.site.x, h / 2, e.site.z);
-    // emitter for 'light'
+    const h = HEIGHT_MIN + (raws[i] / rawMax) * (HEIGHT_MAX - HEIGHT_MIN);
+    const mesh = new THREE.Mesh(
+      makeGeometry(meta, h),
+      new THREE.MeshStandardMaterial({
+        color: meta.color, roughness: 0.45, metalness: 0.15,
+        emissive: new THREE.Color(meta.color), emissiveIntensity: 0.04,
+      })
+    );
+
+    const y = meta.shape === 'sphere' ? meta.footprint / 2 : h / 2;
+    mesh.position.set(e.site.x, y, e.site.z);
+
     if (e.form === 'light') {
-      const bulb = new THREE.Mesh(new THREE.SphereGeometry(2, 12, 12),
-        new THREE.MeshBasicMaterial({ color: 0xfde68a }));
-      bulb.position.set(0, h + 2, 0);
+      const bulb = new THREE.Mesh(
+        new THREE.SphereGeometry(3, 12, 12),
+        new THREE.MeshBasicMaterial({ color: 0xfde68a })
+      );
+      bulb.position.set(0, h / 2 + 3, 0);
       mesh.add(bulb);
+      const halo = new THREE.PointLight(0xfde68a, 0.9, 140);
+      halo.position.set(0, h / 2, 0);
+      mesh.add(halo);
     }
-    mesh.userData = { id: e.id, form: e.form, night: e.night, title: e.title, journal: e.journal };
-    mesh.addEventListener && null;
+
+    mesh.userData = { ...e, _h: h };
     group.add(mesh);
-    // label
-    // (labels disabled to keep drag smooth; tooltip carries info)
+    pickable.push(mesh);
   });
   scene.add(group);
 
-  // hide floor grid under objects - fine
+  // ── camera framing ─────────────────────────────────────────────────────
+  // frame on the works, but never closer than a fixed floor distance — with
+  // only one or two works the bounding box alone zooms in absurdly tight and
+  // the 512 plane (the context that makes the plot readable) drops out of view.
+  const box = new THREE.Box3().setFromObject(group);
+  const centre = box.getCenter(new THREE.Vector3());
+  centre.y = HEIGHT_MAX * 0.34;
+  const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 250);
 
-  // raycast tooltip
+  function frameView() {
+    const d = radius * 1.65;
+    camera.position.set(centre.x + d * 0.6, centre.y + d * 0.7, centre.z + d * 0.6);
+    controls.target.copy(centre);
+    controls.update();
+  }
+  frameView();
+  $('reset').addEventListener('click', frameView);
+
+  // ── legend ─────────────────────────────────────────────────────────────
+  const counts = {};
+  entries.forEach(e => counts[e.form] = (counts[e.form] || 0) + 1);
+  $('legend').innerHTML = forms.map(f => {
+    const c = '#' + (FORM_META[f] || FORM_META.void).color.toString(16).padStart(6, '0');
+    return `<div><i style="background:${c}"></i>${f}<span class="n">${counts[f]}</span></div>`;
+  }).join('');
+  $('scale').textContent = `สูง ×${VERTICAL_EXAG} · แกน Y = params.height · พื้น 512×512`;
+
+  // ── hover ──────────────────────────────────────────────────────────────
   const raycaster = new THREE.Raycaster();
   const mouse = new THREE.Vector2();
-  renderer.domElement.addEventListener('mousemove', (ev) => {
-    mouse.x = (ev.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(ev.clientY / window.innerHeight) * 2 + 1;
+  let hovered = null;
+
+  renderer.domElement.addEventListener('pointermove', ev => {
+    mouse.x = (ev.clientX / innerWidth) * 2 - 1;
+    mouse.y = -(ev.clientY / innerHeight) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObjects(group.children, true);
-    if (hits.length) {
-      let o = hits[0].object;
-      while (o && !o.userData.id) o = o.parent;
-      if (o && o.userData.id) {
-        const d = o.userData;
-        tip.textContent = `${d.id} · ${d.form} · night ${d.night}\n${d.title}\n${d.journal}`;
-        tip.style.display = 'block';
-        tip.style.left = (ev.clientX + 14) + 'px';
-        tip.style.top = (ev.clientY + 14) + 'px';
-      }
+    const hit = raycaster.intersectObjects(pickable, false)[0];
+    const obj = hit ? hit.object : null;
+
+    if (hovered && hovered !== obj) hovered.material.emissiveIntensity = 0.04;
+    hovered = obj;
+    if (obj) obj.material.emissiveIntensity = 0.55;
+
+    if (obj) {
+      const d = obj.userData;
+      const hh = d.params && d.params.height != null ? d.params.height : '—';
+      tip.innerHTML = `<b>${d.id}</b> · ${d.form} · night ${d.night}\n`
+        + `<span class="dim">h=${hh} · site ${d.site.x},${d.site.z}</span>\n`
+        + `${d.title}\n<span class="dim">${d.journal || ''}</span>`;
+      tip.style.display = 'block';
+      tip.style.left = Math.min(ev.clientX + 16, innerWidth - 340) + 'px';
+      tip.style.top = Math.min(ev.clientY + 16, innerHeight - 130) + 'px';
     } else {
       tip.style.display = 'none';
     }
   });
-
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.domElement.addEventListener('pointerleave', () => {
+    tip.style.display = 'none';
+    if (hovered) hovered.material.emissiveIntensity = 0.04;
+    hovered = null;
   });
 
-  function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
-  animate();
+  addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+
+  (function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+  })();
+
+  // diagnostic handle — lets the build be verified without a screenshot
+  window.__ns = {
+    group, scene, camera, entries, counts,
+    heightOf: id => group.children.find(m => m.userData.id === id)?.userData._h,
+  };
 }
 
-main().catch(e => { document.getElementById('status').textContent = 'error: ' + e; });
+main().catch(e => {
+  $('status').textContent = 'error: ' + (e && e.message ? e.message : e);
+  console.error(e);
+});
 </script>
 </body>
 </html>
