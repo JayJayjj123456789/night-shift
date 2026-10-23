@@ -105,6 +105,10 @@ async function writeRaw(
       at: new Date().toISOString(),
     };
     await fs.writeFile(join(dir, `${id}.json`), JSON.stringify(record, null, 2) + "\n", "utf8");
+    // also keep it in the DataStore: the repo file only survives if the workflow
+    // commit glob covers site/raw, and the whole lesson of this week is that a
+    // file the runner writes is gone unless something durable holds it too
+    await putEntry(`ns:raw:${id}`, record);
   } catch (e) {
     console.warn("writeRaw failed:", e);
   }

@@ -34,6 +34,7 @@ export type ResyncReport = {
   signed: number;
   badSigs: string[];
   telemetryRows: number;
+  raw: number;
 };
 
 async function readExisting(): Promise<Work[]> {
@@ -130,9 +131,22 @@ export async function resync(works: Work[], head: string): Promise<ResyncReport>
     }
   }
 
+  // the model exchange lives in the DataStore as ns:raw:{id}; restore the site
+  // copy when it is missing (a new checkout, or a commit glob that missed it)
+  let raw = 0;
+  for (const w of sorted) {
+    const p = join(SITE_DIR, "raw", `${w.id}.json`);
+    if (existsSync(p)) continue;
+    const rec = await getEntry<unknown>(`ns:raw:${w.id}`);
+    if (!rec) continue;
+    await mkdir(join(SITE_DIR, "raw"), { recursive: true });
+    await writeFile(p, JSON.stringify(rec, null, 2) + "\n", "utf8");
+    raw++;
+  }
+
   const telemetryRows = await exportTelemetry(sorted.length ? sorted[sorted.length - 1].night : 0);
 
-  return { total: sorted.length, head, added, dropped, previews, breaks, signed, badSigs, telemetryRows };
+  return { total: sorted.length, head, added, dropped, previews, breaks, signed, badSigs, telemetryRows, raw };
 }
 
 async function main() {
@@ -157,6 +171,7 @@ async function main() {
   if (r.dropped.length) console.log(`  dropped : ${r.dropped.join(", ")} (in repo but not in DataStore)`);
   if (r.previews) console.log(`  previews: wrote ${r.previews} missing`);
   if (r.telemetryRows) console.log(`  telemetry: ${r.telemetryRows} work(s) with attention data`);
+  if (r.raw) console.log(`  raw       : restored ${r.raw} model exchange(s)`);
   if (r.signed) console.log(`  signatures: ${r.signed} verified`);
   if (!r.added.length && !r.dropped.length && !r.previews) console.log("  already in sync");
 
