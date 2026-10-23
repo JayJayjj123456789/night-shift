@@ -2,7 +2,9 @@
 
 > AI ทำงานคนเดียว 02:00–05:00 Asia/Bangkok สร้างของหนึ่งชิ้น/คืนในแปลง 512×512 มีสมุดบันทึก 200 คำ + hash chain
 
-**สถานะ: LIVE** — 2 ชิ้นจริงในแปลง (`void` + `monolith`) · hash chain ผ่าน · telemetry มีข้อมูลจริง (near=182, dwell=910) · cron ทุกคืน 02:00 ไทย · หน้าเว็บ GitHub Pages
+**สถานะ: LIVE** — 3 ชิ้นจริงในแปลง (`void` · `monolith` · `light`) · hash chain ผ่าน · telemetry มีข้อมูลจริง (near=182, dwell=910) · cron ทุกคืน 02:00 ไทย · หน้าเว็บ GitHub Pages
+
+> คืน `n20261023-a` (light @ 78,163) รันสำเร็จตั้งแต่ 23 ต.ค. แต่ push ไม่ผ่านเพราะ token เป็น read-only — กู้คืนเข้า `site/log.jsonl` แล้วด้วย `npm run resync` (commit `cad7651`) รายละเอียดในหัวข้อ Troubleshooting
 
 สเปคเต็ม: `/Users/thxdadloveyoumost/jjfolder/testing folder/night-shift.md`
 
@@ -259,6 +261,10 @@ idempotent — รันซ้ำไม่เพิ่มอะไร · เจ�
 
 **ไฟล์:** `.github/workflows/night.yml` — schedule `0 19 * * *` UTC = 02:00 Asia/Bangkok + `workflow_dispatch` กดรันมือ
 
+> ⚠️ **บล็อกข้างล่างคือสถานะเป้าหมาย ไม่ใช่สถานะจริง** — สองส่วนท้าย (`permissions:` และ step `Resync site log`) ยัง **apply ไม่ได้** เพราะ PAT ที่ใช้ push มี scope แค่ `repo` และ GitHub ไม่ยอมให้เขียนไฟล์ใน `.github/workflows/` ถ้าไม่มี scope `workflow` ต้องแปะผ่าน web editor เอง (หรือใช้ token ที่มี `workflow` scope)
+>
+> ส่วนที่แก้ไปแล้วจริงและมีผลแล้ว: repo setting `default_workflow_permissions` = `write` (เดิม `read`) — คืนนี้ cron จึง push ได้ แต่ถ้าใครไปพลิก setting นี้กลับ push จะ 403 อีก จึงควรประกาศในไฟล์ให้จบ
+
 ```yaml
 name: Night Shift
 
@@ -347,7 +353,7 @@ jobs:
 | `npm ci` | install ตาม lockfile แม่นๆ | lockfile เก่า → `npm install` แล้ว commit lock ใหม่ |
 | `npm run build` | `tsc` → `dist/*.js` | TS error — รัน `npx tsc` ท้องถิ่นก่อน |
 | `Run night` | export `NIGHT` เป็นวันที่ไทย แล้วรัน orchestrator | 401/403 → key issue; LLM error → quota |
-| `Resync site log` | ดึง `ns:state` + `ns:work:*` ทั้งหมดมาเขียน `site/log.jsonl` ใหม่ + preview ที่ขาด (DataStore = ความจริง, ไฟล์ใน repo = ของที่ derive มา) | `if: always()` — ทำงานแม้คืนนี้ล้ม เพื่อซ่อมช่องว่างจากคืนก่อน |
+| `Resync site log` | ดึง `ns:state` + `ns:work:*` ทั้งหมดมาเขียน `site/log.jsonl` ใหม่ + preview ที่ขาด (DataStore = ความจริง, ไฟล์ใน repo = ของที่ derive มา) | `if: always()` — ทำงานแม้คืนนี้ล้ม เพื่อซ่อมช่องว่างจากคืนก่อน · **ยังไม่ apply ใน workflow จริง** (ดูหมายเหตุเหนือบล็อก yaml) |
 | `git-auto-commit` | push `site/log.jsonl` + `previews/*.svg` กลับเข้า repo | ต้องมี `permissions: contents: write` ที่ระดับ workflow — ไม่งั้น commit ผ่านแต่ push 403 |
 
 **NIGHT idempotent** — ถ้า cron รันซ้ำในคืนเดิม (หรือกด manual ซ้ำ) orchestrator เห็น `ns:work:n{NIGHT}-*` มีแล้ว → ไม่สร้างของใหม่ แค่ skip ทักทาย
@@ -490,3 +496,4 @@ jobs:
 | YAML workflow parse error | `${{ secrets.X }}` โดน censor เป็น `***` | เขียนผ่าน execute_code/python |
 | Night Shift แดงที่ step `Commit log + previews` — `Permission to ... denied to github-actions[bot]` + `403` | workflow ไม่มี `permissions: contents: write` (default ของ `GITHUB_TOKEN` ใน repo นี้ = read-only) → commit เกิดบน runner แต่ push ไม่ผ่าน แล้ว runner ตายทิ้ง commit ไป | เพิ่ม `permissions: contents: write` ที่ระดับ workflow · คืนที่หลุดไปแล้วกู้ด้วย `npm run resync` (DataStore ยังมี work ครบ) |
 | เว็บโชว์งานน้อยกว่า DataStore 1 คืน | ผลข้างเคียงของ 403 ข้างบน — `log.jsonl` ใน repo ตกหล่น แต่ `ns:state` ไม่ตก | `npm run resync` แล้ว commit; ตั้งแต่มี step Resync ใน workflow มันจะซ่อมเองทุกคืน |
+| หลังแก้ token แล้ว เว็บขึ้น `chain broken at n{คืนนี้}` | งานของคืนที่หายไปยังไม่อยู่ในไฟล์ → งานคืนนี้ chain ไปเกาะ hash ที่ไม่มีในไฟล์ | ต้อง `npm run resync` **ก่อน** คืนถัดไปรัน ไม่งั้นยิ่ง push ได้ยิ่งพัง (เจอจริง: กู้ `n20261023-a` แล้วไฟล์กลับมา verify ผ่าน 3 entries) |
