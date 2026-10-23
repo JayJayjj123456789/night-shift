@@ -4,7 +4,19 @@ on:
   schedule:
     # 19:00 UTC = 02:00 Asia/Bangkok (UTC+7)
     - cron: "0 19 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      night:
+        description: "YYYYMMDD. Empty = today in Bangkok. A night that already ran is a safe no-op (idempotent)."
+        required: false
+        default: ""
+
+# The default GITHUB_TOKEN in this repo was read-only, so git-auto-commit could
+# commit locally and then get 403 on push — the night succeeded, the log line
+# died with the runner, and the site fell a night behind in silence.
+# (run 39861514089, 2026-10-23: "Permission to ... denied to github-actions[bot]")
+permissions:
+  contents: write
 
 jobs:
   run-night:
@@ -35,11 +47,17 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
         run: |
-          export NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d)
+          NIGHT="${{ github.event.inputs.night }}"
+          if [ -z "$NIGHT" ]; then NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d); fi
+          export NIGHT
           echo "NIGHT=$NIGHT"
           node dist/index.js
 
-      - name: Verify chain
+      # DataStore is the truth; site/log.jsonl is derived from it. Rebuild before
+      # anyone checks the file, so a night that ran while a push was failing still
+      # lands, and a hesitation that never wrote a log line still gets published.
+      - name: Resync site log from DataStore
+        if: always()
         working-directory: orchestrator
         env:
           ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
@@ -48,10 +66,28 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
         run: |
-          export NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d)
+          NIGHT="${{ github.event.inputs.night }}"
+          if [ -z "$NIGHT" ]; then NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d); fi
+          export NIGHT
+          node dist/resync.js
+
+      - name: Verify chain
+        if: always()
+        working-directory: orchestrator
+        env:
+          ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
+          UNIVERSE_ID: ${{ secrets.UNIVERSE_ID }}
+          LLM_BASE: ${{ secrets.LLM_BASE }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+        run: |
+          NIGHT="${{ github.event.inputs.night }}"
+          if [ -z "$NIGHT" ]; then NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d); fi
+          export NIGHT
           node dist/status.js
 
       - name: Commit log + previews
+        if: always()
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           file_pattern: "site/log.jsonl site/previews/*.svg"
