@@ -2,7 +2,9 @@
 
 > AI ทำงานคนเดียว 02:00–05:00 Asia/Bangkok สร้างของหนึ่งชิ้น/คืนในแปลง 512×512 มีสมุดบันทึก 200 คำ + hash chain
 
-**สถานะ: LIVE** — 2 ชิ้นจริงในแปลง (`void` + `monolith`) · hash chain ผ่าน · telemetry มีข้อมูลจริง (near=182, dwell=910) · cron ทุกคืน 02:00 ไทย · หน้าเว็บ GitHub Pages
+**สถานะ: LIVE** — 3 ชิ้นจริงในแปลง (`void` · `monolith` · `light`) · hash chain ผ่าน · telemetry มีข้อมูลจริง (near=182, dwell=910) · cron ทุกคืน 02:00 ไทย · หน้าเว็บ GitHub Pages
+
+> คืน `n20261023-a` (light @ 78,163) รันสำเร็จตั้งแต่ 23 ต.ค. แต่ push ไม่ผ่านเพราะ token เป็น read-only — กู้คืนเข้า `site/log.jsonl` แล้วด้วย `npm run resync` (commit `cad7651`) รายละเอียดในหัวข้อ Troubleshooting
 
 สเปคเต็ม: `/Users/thxdadloveyoumost/jjfolder/testing folder/night-shift.md`
 
@@ -220,6 +222,7 @@ NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d) node dist/status.js
 7. Schedule        ····  next cron 2026-10-23 02:00 Bangkok
 
   overall: chain INTACT
+  site: in sync with the DataStore
 ```
 
 **อ่านผล:**
@@ -231,15 +234,43 @@ NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d) node dist/status.js
 | `FAIL` | พังจริง | แก้ก่อนคืนถัดไป |
 | `····` | ข้อมูลประกอบ | — |
 
-**exit code:** `0` = ปกติ, `2` = chain พัง, `1` = ต่อ Roblox ไม่ได้ — ใช้กับ CI ได้เลย
+**exit code:** `0` = ปกติ, `2` = chain พัง **หรือ** `site/log.jsonl` ตกหลัง DataStore (ขาด entry / ขาด preview), `1` = ต่อ Roblox ไม่ได้ — ใช้กับ CI ได้เลย
+
+> เดิมหัวข้อ 6 ขึ้นแค่ `WARN` ตอน log ขาด → CI เขียวทั้งที่เว็บตามไม่ทัน (เจอจริง 24 ต.ค.) ตอนนี้เป็น `FAIL` + `exit 2` แล้ว
 
 **ทำไมต้องมี:** ระบบนี้เคย "ดูเหมือนทำงาน" ทั้งที่พังจริง 3 จุด (void ไม่มี geometry, telemetry flush ทุก 5 วินาที, นับ journal เป็นงาน) คำสั่งนี้จับได้ทั้งหมดในที่เดียว
+
+### `npm run resync` — ซ่อม `site/log.jsonl` ให้ตรงกับ DataStore
+
+```bash
+cd orchestrator
+NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d) node dist/resync.js
+```
+
+`ns:state` + `ns:work:*` คือความจริง — `site/log.jsonl` เป็นแค่ไฟล์ที่ derive มาจากมัน resync จะอ่านทุก work จาก DataStore, เรียงตามคืน, verify hash chain ระหว่างเดิน, เขียน `log.jsonl` ใหม่ทั้งไฟล์ + preview ที่ยังขาด แล้วบอกว่าอะไรเพิ่ม/หาย
+
+```
+resync: 3 works from DataStore (head 97294172204894a5)
+  added   : n20261023-a
+  previews: wrote 1 missing
+  chain verified ✓
+```
+
+idempotent — รันซ้ำไม่เพิ่มอะไร · เจอ chain พังจะ `exit 2` และปริ๊นว่าพังที่ work ไหน · ใช้กู้เคส "คืนนั้นรันสำเร็จแต่ push ไม่ผ่าน" ได้ตรงๆ
 
 ---
 
 ## ขั้นที่ 5 — GitHub Actions (cron 02:00 ไทย)
 
 **ไฟล์:** `.github/workflows/night.yml` — schedule `0 19 * * *` UTC = 02:00 Asia/Bangkok + `workflow_dispatch` กดรันมือ
+
+> ⚠️ **บล็อกข้างล่างคือสถานะเป้าหมาย ไม่ใช่สถานะจริง** — สองส่วนท้าย (`permissions:` และ step `Resync site log`) ยัง **apply ไม่ได้** เพราะ PAT ที่ใช้ push มี scope แค่ `repo` และ GitHub ไม่ยอมให้เขียนไฟล์ใน `.github/workflows/` ถ้าไม่มี scope `workflow` ต้องแปะผ่าน web editor เอง (หรือใช้ token ที่มี `workflow` scope)
+>
+> ส่วนที่แก้ไปแล้วจริงและมีผลแล้ว: repo setting `default_workflow_permissions` = `write` (เดิม `read`) — คืนนี้ cron จึง push ได้ แต่ถ้าใครไปพลิก setting นี้กลับ push จะ 403 อีก จึงควรประกาศในไฟล์ให้จบ
+>
+> **วิธีแปะ (ครั้งเดียว):** เปิด `github.com/JayJayjj123456789/night-shift/edit/main/.github/workflows/night.yml` → กดทั้งไฟล์ (⌘A) → วางไฟล์ที่เตรียมไว้ → Commit changes เข้า `main` ตรงๆ ได้ ไม่ต้องผ่าน PR (ไฟล์นี้ไม่มี test ให้รอ)
+>
+> หลังแปะแล้วมี input `night` เพิ่มมา: Actions → Night Shift → Run workflow → ใส่ `20261025` เพื่อลองของจริงได้ทันที ไม่ต้องรอ 02:00 (คืนที่รันไปแล้วจะ skip เองเพราะ idempotent)
 
 ```yaml
 name: Night Shift
@@ -248,7 +279,19 @@ on:
   schedule:
     # 19:00 UTC = 02:00 Asia/Bangkok (UTC+7)
     - cron: "0 19 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      night:
+        description: "YYYYMMDD. Empty = today in Bangkok. A night that already ran is a safe no-op (idempotent)."
+        required: false
+        default: ""
+
+# The default GITHUB_TOKEN in this repo was read-only, so git-auto-commit could
+# commit locally and then get 403 on push — the night succeeded, the log line
+# died with the runner, and the site fell a night behind in silence.
+# (run 39861514089, 2026-10-23: "Permission to ... denied to github-actions[bot]")
+permissions:
+  contents: write
 
 jobs:
   run-night:
@@ -279,11 +322,17 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
         run: |
-          export NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d)
+          NIGHT="${{ github.event.inputs.night }}"
+          if [ -z "$NIGHT" ]; then NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d); fi
+          export NIGHT
           echo "NIGHT=$NIGHT"
           node dist/index.js
 
-      - name: Verify chain
+      # DataStore is the truth; site/log.jsonl is derived from it. Rebuild before
+      # anyone checks the file, so a night that ran while a push was failing still
+      # lands, and a hesitation that never wrote a log line still gets published.
+      - name: Resync site log from DataStore
+        if: always()
         working-directory: orchestrator
         env:
           ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
@@ -292,10 +341,28 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
         run: |
-          export NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d)
+          NIGHT="${{ github.event.inputs.night }}"
+          if [ -z "$NIGHT" ]; then NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d); fi
+          export NIGHT
+          node dist/resync.js
+
+      - name: Verify chain
+        if: always()
+        working-directory: orchestrator
+        env:
+          ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
+          UNIVERSE_ID: ${{ secrets.UNIVERSE_ID }}
+          LLM_BASE: ${{ secrets.LLM_BASE }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+        run: |
+          NIGHT="${{ github.event.inputs.night }}"
+          if [ -z "$NIGHT" ]; then NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d); fi
+          export NIGHT
           node dist/status.js
 
       - name: Commit log + previews
+        if: always()
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           file_pattern: "site/log.jsonl site/previews/*.svg"
@@ -310,8 +377,10 @@ jobs:
 | `setup-node` | Node 20 + npm cache (key = package-lock.json) | เปลี่ยน `cache-dependency-path` ถ้า yml ย้ายที่ |
 | `npm ci` | install ตาม lockfile แม่นๆ | lockfile เก่า → `npm install` แล้ว commit lock ใหม่ |
 | `npm run build` | `tsc` → `dist/*.js` | TS error — รัน `npx tsc` ท้องถิ่นก่อน |
-| `Run night` | export `NIGHT` เป็นวันที่ไทย แล้วรัน orchestrator | 401/403 → key issue; LLM error → quota |
-| `git-auto-commit` | push `site/log.jsonl` + `previews/*.svg` กลับเข้า repo | ใช้ `GITHUB_TOKEN` default อย่าแก้ |
+| `Run night` | `NIGHT` = input `night` ถ้ากดมือ ไม่งั้น = วันที่ไทย แล้วรัน orchestrator · LLM ตอบผิดกฎได้แก้ตัว **1 ครั้ง** (ส่งข้อหาไปบอก) ก่อนยอมแพ้เป็น void | 401/403 → key issue; LLM error → quota |
+| `Resync site log` | เขียน `site/log.jsonl` ใหม่ทั้งไฟล์จาก `ns:state` + `ns:work:*` + preview ที่ขาด — **รันก่อน verify** เพื่อให้ตรวจของจริง ไม่ใช่ของที่ค้าง | `if: always()` · exit 2 = chain พัง (บอก work ที่พัง) |
+| `Verify chain` | `status.js` 7 หัวข้อ — chain **และ** site ต้องตรงกับ DataStore | exit 2 = chain พัง หรือ site ตกหลัง DataStore |
+| `git-auto-commit` | push `site/log.jsonl` + `previews/*.svg` กลับเข้า repo | ต้องมี `permissions: contents: write` ที่ระดับ workflow — ไม่งั้น commit ผ่านแต่ push 403 · `if: always()` |
 
 **NIGHT idempotent** — ถ้า cron รันซ้ำในคืนเดิม (หรือกด manual ซ้ำ) orchestrator เห็น `ns:work:n{NIGHT}-*` มีแล้ว → ไม่สร้างของใหม่ แค่ skip ทักทาย
 
@@ -451,3 +520,8 @@ jobs:
 | telemetry ว่างทุกคืนทั้งที่มีข้อมูล | key format ไม่ตรงกับ `src/telemetry.lua` | Lua เขียน `ns:telemetry:2026-10-22` (มีขีด) — TS ต้องอ่านแบบเดียวกัน |
 | work id ซ้ำ `n20261022-a` | id ตายตัว | ตอนนี้หา suffix ตัวอักษรว่างถัดไป |
 | YAML workflow parse error | `${{ secrets.X }}` โดน censor เป็น `***` | เขียนผ่าน execute_code/python |
+| Night Shift แดงที่ step `Commit log + previews` — `Permission to ... denied to github-actions[bot]` + `403` | workflow ไม่มี `permissions: contents: write` (default ของ `GITHUB_TOKEN` ใน repo นี้ = read-only) → commit เกิดบน runner แต่ push ไม่ผ่าน แล้ว runner ตายทิ้ง commit ไป | เพิ่ม `permissions: contents: write` ที่ระดับ workflow · คืนที่หลุดไปแล้วกู้ด้วย `npm run resync` (DataStore ยังมี work ครบ) |
+| เว็บโชว์งานน้อยกว่า DataStore 1 คืน | ผลข้างเคียงของ 403 ข้างบน — `log.jsonl` ใน repo ตกหล่น แต่ `ns:state` ไม่ตก | `npm run resync` แล้ว commit; ตั้งแต่มี step Resync ใน workflow มันจะซ่อมเองทุกคืน |
+| หลังแก้ token แล้ว เว็บขึ้น `chain broken at n{คืนนี้}` | งานของคืนที่หายไปยังไม่อยู่ในไฟล์ → งานคืนนี้ chain ไปเกาะ hash ที่ไม่มีในไฟล์ | ต้อง `npm run resync` **ก่อน** คืนถัดไปรัน ไม่งั้นยิ่ง push ได้ยิ่งพัง (เจอจริง: กู้ `n20261023-a` แล้วไฟล์กลับมา verify ผ่าน 3 entries) |
+| run เขียวทั้งที่เว็บไม่ขยับ | `hesitate()` เคยไม่เขียน log/preview → ไม่มีอะไรให้ commit → step `success` แบบไม่ทำอะไร | แก้แล้ว: ทุกผลลัพธ์ผ่าน `publishWork()` · และ status หัวข้อ 6 เป็น `FAIL` แล้ว ไม่ใช่ `WARN` |
+| `lexicon: title has [...]` แล้วได้ void | โมเดลเขียนคำนอกลิสต์ 200 คำ (พบบ่อย: `the` `a` `of` และชื่อ form เอง) | มี retry 1 ครั้งพร้อมบอกคำที่ผิดแล้ว · prompt เตือนเรื่อง article/of/form name ชัดขึ้น |

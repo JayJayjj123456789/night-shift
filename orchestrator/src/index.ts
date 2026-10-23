@@ -40,6 +40,7 @@ async function hesitate(state: State, reason: string): Promise<void> {
     works: [...state.works, { id: work.id, site: work.site, form: work.form }],
   });
   await publish("nightshift", { type: "new_work", id: work.id });
+  await publishWork(work);
   console.log(`hesitated (${reason}) — wrote ${work.id}`);
 }
 
@@ -65,6 +66,26 @@ async function appendPublicLog(work: Work): Promise<void> {
   }
 }
 
+/**
+ * Put a finished work on the public site: preview svg + one line of log.jsonl.
+ * EVERY outcome goes through here, including a hesitation. A void is still a
+ * result — and if it never reaches the file, the nightly commit has nothing to
+ * commit, the step reports success, and the site silently falls a night behind
+ * the DataStore. That is exactly what happened on 2026-10-24.
+ */
+async function publishWork(work: Work): Promise<void> {
+  const fs = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  try {
+    const previewDir = join(SITE_DIR, "previews");
+    await fs.mkdir(previewDir, { recursive: true });
+    await fs.writeFile(join(previewDir, `${work.id}.svg`), renderPreview(work), "utf8");
+    await appendPublicLog(work);
+  } catch (e) {
+    console.warn("publishWork failed:", e);
+  }
+}
+
 export async function runNight(): Promise<void> {
   const state = (await getEntry<State>("ns:state")) ?? {
     night: 0,
@@ -80,9 +101,26 @@ export async function runNight(): Promise<void> {
 
   try {
     const telemetry = await readTelemetry(state);
-    const raw = await askLLM(state, telemetry);
-    const d = Decision.parse(raw);
-    assertConstitution(d, state);
+
+    // One shot used to be the whole story: if the model broke a rule, the night
+    // fell straight to hesitate(). On 2026-10-24 it wrote "garden" — a word the
+    // 200-word allowlist does not contain — and a night with a perfectly good
+    // idea became a void at (0,0). Hand the rejection back and let it correct
+    // itself once before giving up.
+    let d: Decision | null = null;
+    let rejection = "";
+    for (let attempt = 1; attempt <= 2 && !d; attempt++) {
+      const raw = await askLLM(state, telemetry, rejection || undefined);
+      try {
+        const parsed = Decision.parse(raw);
+        assertConstitution(parsed, state);
+        d = parsed;
+      } catch (e) {
+        rejection = (e instanceof Error ? e.message : String(e)).slice(0, 400);
+        console.warn(`attempt ${attempt} rejected: ${rejection}`);
+      }
+    }
+    if (!d) throw new Error(`no valid decision after 2 attempts — last: ${rejection}`);
 
     const prevHash = state.journalHead;
 
@@ -119,13 +157,7 @@ export async function runNight(): Promise<void> {
 
     await publish("nightshift", { type: "new_work", id: work.id, site: work.site, form: work.form });
 
-    const svg = renderPreview(work);
-    const fs = await import("node:fs/promises");
-    const previewDir = join(SITE_DIR, "previews");
-    await fs.mkdir(previewDir, { recursive: true });
-    await fs.writeFile(join(previewDir, `${work.id}.svg`), svg, "utf8");
-
-    await appendPublicLog(work);
+    await publishWork(work);
     console.log(`built ${work.id} — ${d.form} at (${d.site.x}, ${d.site.z}) hash=${hash}`);
   } catch (e) {
     console.warn("runNight failed, hesitating:", e);

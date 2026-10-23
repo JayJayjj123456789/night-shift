@@ -7,6 +7,7 @@
     "build": "tsc",
     "night": "node dist/index.js",
     "status": "node dist/status.js",
+    "resync": "node dist/resync.js",
     "test": "node dist/status.js"
   },
   "dependencies": {

@@ -257,6 +257,12 @@ HARD RULES
 THE ONLY WORDS YOU MAY USE IN title AND journal
 ${words}
 
+There are exactly 200 of them and nothing else counts. In particular there are
+no articles and no "of": "the", "a", "an" and "of" are NOT in the list and will
+get the whole night rejected. Write "small stone under moon", never "a small
+stone under the moon". The form names are not in the list either — do not write
+"garden", "monolith", "machine" or "text" in title or journal.
+
 FORMS AND THEIR PARAMETERS
 ${paramSpec}
 ${formBlock}
@@ -280,8 +286,22 @@ before or after. Matching this schema:
 }`;
 }
 
-export async function askLLM(state: State, telemetry: Attention[]): Promise<unknown> {
-  const prompt = buildPrompt(state, telemetry);
+/**
+ * @param rejection what the previous answer was rejected for (constitution or
+ *   schema). Passed back so the model can correct the specific mistake instead
+ *   of being asked the same question again and guessing differently.
+ */
+export async function askLLM(
+  state: State,
+  telemetry: Attention[],
+  rejection?: string,
+): Promise<unknown> {
+  const prompt =
+    buildPrompt(state, telemetry) +
+    (rejection
+      ? `\n\nYOUR PREVIOUS ANSWER WAS REJECTED\n${rejection}\n`
+        + `Return the JSON again with exactly that fixed. Do not repeat the same mistake.`
+      : "");
 
   // ---- LLM call with retry + budget guard ----
   let lastErr: unknown;
