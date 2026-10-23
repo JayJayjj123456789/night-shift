@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Night Shift — parts demo (what the LLM could emit)</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #05060a;
+    font: 13px/1.5 ui-monospace, "SF Mono", Menlo, monospace; color: #cbd5e1; }
+  #c { width: 100%; height: 100%; display: block; }
+  #hud { position: fixed; top: 12px; left: 12px; padding: 10px 14px;
+    background: rgba(8,10,18,.72); border: 1px solid #1e293b; border-radius: 10px;
+    backdrop-filter: blur(6px); max-width: 320px; }
+  #hud b { color: #e2e8f0; }
+  #hud .dim { color: #64748b; }
+  #hud ul { margin: 6px 0 0; padding-left: 16px; }
+  #hud li { margin: 2px 0; }
+  #cap { position: fixed; bottom: 12px; left: 12px; color: #475569; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <b>parts schema — proof of concept</b>
+  <div class="dim">3 works composed from part lists instead of one primitive each.</div>
+  <ul>
+    <li>shape: block · cylinder · sphere · cone · torus · plate</li>
+    <li>material: neon · glass · stone · metal</li>
+    <li>emissive + rotation + float, per part</li>
+    <li>budget: ≤ 14 parts, palette of 8</li>
+  </ul>
+</div>
+<div id="cap">drag to orbit · scroll to zoom</div>
+
+<script type="importmap">
+{ "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ---------------------------------------------------------------- palette
+const PAL = {
+  ink:    0x0b1220, slate: 0x334155, bone: 0xd6cbb8, rust: 0x9a4b2b,
+  amber:  0xe0a33a, jade:  0x3f9e7a, sky:   0x5aa9e6, violet:0x8b6bd9,
+};
+
+const works = [
+  {
+    id: 'n20261022-a', night: 20261022, form: 'void', site: { x: 0, z: 0 },
+    title: 'void', journal: 'ฉันลังเล',
+    parts: [
+      { shape: 'sphere', size: [5, 5, 5], pos: [0, 5, 0], color: 'slate', material: 'stone' },
+      { shape: 'torus',  size: [9, 1, 1], pos: [0, 5, 0], color: 'amber', material: 'metal', rot: [90, 0, 0] },
+      { shape: 'plate',  size: [12, 0.4, 12], pos: [0, 0.2, 0], color: 'ink', material: 'stone' },
+    ],
+  },
+  {
+    id: 'n20261022-b', night: 20261022, form: 'monolith', site: { x: 100, z: 80 },
+    title: 'bright stone tower', journal: 'build near bright stone tower',
+    parts: [
+      { shape: 'block',    size: [16, 42, 16], pos: [0, 21, 0], color: 'bone', material: 'stone' },
+      { shape: 'block',    size: [9, 6, 9],    pos: [0, 44, 0], color: 'rust', material: 'metal' },
+      { shape: 'cylinder', size: [4, 20, 4],  pos: [11, 10, 6], color: 'slate', material: 'metal', rot: [0, 0, 8] },
+      { shape: 'sphere',   size: [3, 3, 3],    pos: [11, 21, 6], color: 'amber', material: 'neon', emissive: 1 },
+      { shape: 'cone',     size: [7, 12, 7],   pos: [-8, 6, -8], color: 'jade', material: 'stone' },
+      { shape: 'plate',    size: [34, 0.4, 34], pos: [0, 0.2, 0], color: 'ink', material: 'stone' },
+    ],
+  },
+  {
+    id: 'n20261023-a', night: 20261023, form: 'light', site: { x: 78, z: 163 },
+    title: 'bright night beacon', journal: 'bright night beacon near open ground',
+    parts: [
+      { shape: 'cylinder', size: [2, 38, 2],  pos: [0, 19, 0], color: 'slate', material: 'metal' },
+      { shape: 'sphere',    size: [7, 7, 7],   pos: [0, 40, 0], color: 'amber', material: 'neon', emissive: 2.2, spin: 1 },
+      { shape: 'torus',     size: [14, 0.8, 0.8], pos: [0, 26, 0], color: 'sky', material: 'neon', rot: [90, 0, 0], float: 2 },
+      { shape: 'torus',     size: [20, 0.8, 0.8], pos: [0, 14, 0], color: 'violet', material: 'neon', rot: [90, 0, 0], float: -1.4 },
+      { shape: 'plate',     size: [26, 0.4, 26], pos: [0, 0.2, 0], color: 'ink', material: 'stone' },
+    ],
+  },
+];
+
+// ---------------------------------------------------------------- renderer
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.5;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x080b14);
+scene.fog = new THREE.Fog(0x05060a, 320, 780);
+
+const camera = new THREE.PerspectiveCamera(46, innerWidth / innerHeight, 0.1, 2000);
+camera.position.set(215, 165, 300);
+
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(55, 18, 82);
+controls.enableDamping = true;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.45;
+
+// ---------------------------------------------------------------- light + ground
+scene.add(new THREE.HemisphereLight(0xa9c2e0, 0x121a28, 0.95));
+const sun = new THREE.DirectionalLight(0xfff1d6, 2.1);
+sun.position.set(120, 190, 90);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 20; sun.shadow.camera.far = 520;
+sun.shadow.camera.left = -260; sun.shadow.camera.right = 260;
+sun.shadow.camera.top = 260; sun.shadow.camera.bottom = -260;
+scene.add(sun);
+const rim = new THREE.DirectionalLight(0x6fa8ff, 0.5);
+rim.position.set(-140, 70, -110);
+scene.add(rim);
+
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(512, 512),
+  new THREE.MeshStandardMaterial({ color: 0x0d1420, roughness: 0.95, metalness: 0.0 }),
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const grid = new THREE.GridHelper(512, 32, 0x1f2b3d, 0x141c2a);
+grid.position.y = 0.05;
+scene.add(grid);
+
+// ---------------------------------------------------------------- parts -> meshes
+function geometryFor(p) {
+  const [a, b, c] = p.size;
+  switch (p.shape) {
+    case 'cylinder': return new THREE.CylinderGeometry(a, b, c, 28);
+    case 'sphere':   return new THREE.SphereGeometry(a, 32, 24);
+    case 'cone':     return new THREE.ConeGeometry(a, b, 24);
+    case 'torus':    return new THREE.TorusGeometry(a, b, 20, 48);
+    case 'plate':    return new THREE.BoxGeometry(a, b, c);
+    default:         return new THREE.BoxGeometry(a, b, c);
+  }
+}
+
+function materialFor(p) {
+  const color = PAL[p.color] ?? PAL.bone;
+  const glow = p.emissive ? 0.9 + p.emissive * 0.4 : 0;
+  if (p.material === 'neon')
+    return new THREE.MeshStandardMaterial({
+      color, emissive: color, emissiveIntensity: p.emissive ?? 1,
+      roughness: 0.35, metalness: 0,
+    });
+  if (p.material === 'glass')
+    return new THREE.MeshPhysicalMaterial({
+      color, roughness: 0.05, metalness: 0,
+      transmission: 0.92, thickness: 6, transparent: true, opacity: 0.55,
+    });
+  if (p.material === 'metal')
+    return new THREE.MeshStandardMaterial({ color, roughness: 0.28, metalness: 0.85 });
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0.05 });
+  void glow;
+}
+
+const animated = [];
+const group = new THREE.Group();
+scene.add(group);
+
+for (const w of works) {
+  const pivot = new THREE.Group();
+  pivot.position.set(w.site.x, 0, w.site.z);
+  group.add(pivot);
+  w.parts.forEach((p, i) => {
+    const m = new THREE.Mesh(geometryFor(p), materialFor(p));
+    m.position.set(...p.pos);
+    if (p.rot) m.rotation.set(p.rot[0] * Math.PI / 180, p.rot[1] * Math.PI / 180, p.rot[2] * Math.PI / 180);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    m.userData = { id: w.id, form: w.form, journal: w.journal, part: i };
+    pivot.add(m);
+    if (p.spin) animated.push({ m, axis: 'y', speed: p.spin, base: m.position.y });
+    if (p.float) animated.push({ m, axis: 'float', speed: p.float, base: m.position.y });
+  });
+}
+
+// ---------------------------------------------------------------- hover
+const ray = new THREE.Raycaster();
+const ptr = new THREE.Vector2();
+let hovered = null;
+canvas.addEventListener('pointermove', (e) => {
+  ptr.x = (e.clientX / innerWidth) * 2 - 1;
+  ptr.y = -(e.clientY / innerHeight) * 2 + 1;
+});
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+renderer.setSize(innerWidth, innerHeight);
+
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const t = clock.getElapsedTime();
+  for (const a of animated) {
+    if (a.axis === 'y') a.m.rotation.y = t * a.speed;
+    else a.m.position.y = a.base + Math.sin(t * 0.8 + a.speed) * 2.4;
+  }
+  ray.setFromCamera(ptr, camera);
+  const hit = ray.intersectObjects(group.children, true)[0];
+  const d = hit?.object.userData;
+  if (d && (!hovered || hovered.object !== hit.object)) hovered = hit;
+  controls.update();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
