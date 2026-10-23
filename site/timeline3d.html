@@ -84,6 +84,57 @@ function makeGeometry(meta, h) {
   }
 }
 
+// ── parts rendering ────────────────────────────────────────────────────
+// Same rules the builder and the SVG preview use, so a work looks like itself
+// in all three places. pos is the CENTRE of the part in studs.
+
+const PALETTE = {
+  ink: 0x0b1220, slate: 0x334155, bone: 0xd6cbb8, rust: 0x9a4b2b,
+  amber: 0xe0a33a, jade: 0x3f9e7a, sky: 0x5aa9e6, violet: 0x8b6bd9,
+};
+
+/** [width, height, depth] — round shapes read width as diameter. */
+function partSize(p) {
+  switch (p.shape) {
+    case 'plate':
+    case 'block':
+    case 'wedge': return { w: p.size[0], h: p.size[1], d: p.size[2] };
+    case 'torus': return { w: p.size[0] * 2, h: p.size[1], d: p.size[0] * 2 };
+    default: return { w: p.size[0], h: p.size[0], d: p.size[0] };
+  }
+}
+
+function partGeometry(p) {
+  const { w, h, d } = partSize(p);
+  switch (p.shape) {
+    case 'cylinder': return new THREE.CylinderGeometry(w / 2, w / 2, h, 24);
+    case 'sphere':   return new THREE.SphereGeometry(w / 2, 24, 18);
+    case 'cone':     return new THREE.ConeGeometry(w / 2, h, 20);
+    case 'torus':    return new THREE.TorusGeometry(w / 2, Math.max(0.6, h), 14, 36);
+    case 'wedge':    return new THREE.CylinderGeometry(w / 2, w / 2, h, 3, 1);
+    default:         return new THREE.BoxGeometry(w, h, d);
+  }
+}
+
+function partMaterial(p) {
+  const color = PALETTE[p.color] ?? PALETTE.bone;
+  switch (p.material) {
+    case 'neon':
+      return new THREE.MeshStandardMaterial({
+        color, emissive: color, emissiveIntensity: p.emissive ?? 1, roughness: 0.4, metalness: 0,
+      });
+    case 'glass':
+      return new THREE.MeshPhysicalMaterial({
+        color, roughness: 0.05, metalness: 0, transmission: 0.9, thickness: 5,
+        transparent: true, opacity: 0.6,
+      });
+    case 'metal':
+      return new THREE.MeshStandardMaterial({ color, roughness: 0.25, metalness: 0.85 });
+    default:
+      return new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0.05 });
+  }
+}
+
 async function main() {
   const status = $('status');
   const res = await fetch(SRC, { cache: 'no-store' });
@@ -153,8 +204,39 @@ async function main() {
   const tip = $('tip');
   const group = new THREE.Group();
   const pickable = [];
+  const anim = [];   // parts that spin or float
 
   entries.forEach((e, i) => {
+    // ── assembly (parts) ────────────────────────────────────────────────
+    // A work may carry an explicit part list instead of one templated
+    // primitive. Works built before that schema have none and fall through to
+    // the form rendering below, so nothing already published changes.
+    if (Array.isArray(e.parts) && e.parts.length) {
+      const pivot = new THREE.Group();
+      pivot.position.set(e.site.x, 0, e.site.z);
+      e.parts.forEach((p, pi) => {
+        const mesh = new THREE.Mesh(partGeometry(p), partMaterial(p));
+        mesh.position.set(p.pos[0], p.pos[1], p.pos[2]);
+        if (p.rot) mesh.rotation.set(
+          p.rot[0] * Math.PI / 180, p.rot[1] * Math.PI / 180, p.rot[2] * Math.PI / 180,
+        );
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.userData = { ...e, _part: pi };
+        pivot.add(mesh);
+        pickable.push(mesh);
+        if (p.spin) anim.push({ m: mesh, mode: 'spin', speed: p.spin });
+        if (p.float) anim.push({ m: mesh, mode: 'float', speed: p.float, base: p.pos[1] });
+        if ((p.emissive || 0) > 0) {
+          const light = new THREE.PointLight(PALETTE[p.color] ?? 0xffffff, p.emissive * 0.7, 90);
+          light.position.set(p.pos[0], p.pos[1] + partSize(p).h / 2, p.pos[2]);
+          pivot.add(light);
+        }
+      });
+      group.add(pivot);
+      return;
+    }
+
     const meta = FORM_META[e.form] || FORM_META.void;
     const h = HEIGHT_MIN + (raws[i] / rawMax) * (HEIGHT_MAX - HEIGHT_MIN);
     const mesh = new THREE.Mesh(
@@ -254,11 +336,18 @@ async function main() {
     renderer.setSize(innerWidth, innerHeight);
   });
 
-  (function animate() {
+  // animated parts: spin on Y, or bob up and down
+  let t0 = performance.now();
+  (function animate(now) {
     requestAnimationFrame(animate);
+    const t = (now - t0) / 1000;
+    for (const a of anim) {
+      if (a.mode === 'spin') a.m.rotation.y = t * a.speed * Math.PI / 180;
+      else a.m.position.y = a.base + Math.sin(t * 0.8) * a.speed;
+    }
     controls.update();
     renderer.render(scene, camera);
-  })();
+  })(t0);
 
   // diagnostic handle — lets the build be verified without a screenshot
   window.__ns = {
