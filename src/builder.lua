@@ -18,7 +18,7 @@
 -- orchestrator reads that and compares it with this line, and `npm run status`
 -- then says "the place is running v2, the repo has v3" instead of staying green
 -- over a place that was never re-installed.
-local BUILDER_VERSION = 3
+local BUILDER_VERSION = 4
 
 local DSS = game:GetService("DataStoreService")
 local Messaging = game:GetService("MessagingService")
@@ -524,6 +524,23 @@ local function build(work)
   model.Parent = root
 end
 
+-- heartbeat: which builder is actually running in this place.
+--
+-- FIRST, before anything that can fail. It was written after the rebuild loop,
+-- which meant that if a single GetAsync threw or a work failed to build, the
+-- script died and the place reported nothing — and "nothing" is indistinguishable
+-- from "this place never got the new code", which is the exact confusion the
+-- heartbeat exists to remove. It needs no state, so it goes first.
+--
+-- One write per server start. Wrapped: a failed heartbeat must never stop the
+-- plot from being built.
+pcall(function()
+  store:SetAsync("ns:builder", {
+    version = BUILDER_VERSION,
+    at = os.time(),
+  })
+end)
+
 -- startup: rebuild everything from state
 local state = store:GetAsync("ns:state")
 if state then
@@ -532,21 +549,6 @@ if state then
     if work then build(work) end
   end
 end
-
--- heartbeat: which builder is actually running in this place.
---
--- One write per server start. If the place was never re-installed after a change
--- to this file, the number here is older than the one in the repo and the
--- orchestrator reports the mismatch. It cannot repair the place — only a fresh
--- install-studio.py run can — but it turns a silent divergence into a line.
--- Wrapped: a failed heartbeat must never stop the plot from being built.
-pcall(function()
-  store:SetAsync("ns:builder", {
-    version = BUILDER_VERSION,
-    works = (state and state.works and #state.works) or 0,
-    at = os.time(),
-  })
-end)
 
 -- live: build new work the moment it's published
 Messaging:SubscribeAsync("nightshift", function(msg)
