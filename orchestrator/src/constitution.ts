@@ -50,12 +50,24 @@ function assertParts(parts: Part[]): void {
   }
 }
 
+/** How often an assembly is compulsory. One night in three. */
+export const ASSEMBLY_EVERY = 3;
+
+export function isAssemblyNight(night: number): boolean {
+  return night > 0 && night % ASSEMBLY_EVERY === 0;
+}
+
 function findViolations(text: string): string[] {
   const words = text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
   return words.filter((w) => !LEXICON.has(w));
 }
 
-export function assertConstitution(d: Decision, state: State, hasAttention = false): void {
+export function assertConstitution(
+  d: Decision,
+  state: State,
+  hasAttention = false,
+  night = 0,
+): void {
   const titleBad = findViolations(d.title);
   const journalBad = findViolations(d.journal);
   if (titleBad.length || journalBad.length) {
@@ -70,6 +82,18 @@ export function assertConstitution(d: Decision, state: State, hasAttention = fal
   // the night produced nothing. Reject it, so the retry has to respond.
   if (d.form === "void" && hasAttention) {
     throw new Error("void is not allowed while attention data exists — respond to it");
+  }
+
+  // Every third night must be an assembly. Three nights of evidence say asking
+  // politely does not work: opt-in parts -> no parts; "most nights compose" ->
+  // no parts; that plus the void ban -> still no parts. The model reads an
+  // optional field as optional. One night in three is forced, the rest are free
+  // to be a single object, which keeps the restrained nights that give the
+  // assembled ones something to contrast with.
+  if (isAssemblyNight(night) && !(d.parts && d.parts.length >= 2)) {
+    throw new Error(
+      `night ${night} is an assembly night — send "parts" with at least 2 parts`,
+    );
   }
 
   for (const [k, v] of Object.entries(d.params)) {

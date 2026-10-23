@@ -165,7 +165,7 @@ export async function runNight(): Promise<void> {
       });
       try {
         const parsed = Decision.parse(raw);
-        assertConstitution(parsed, state, telemetry.length > 0);
+        assertConstitution(parsed, state, telemetry.length > 0, getNight());
         d = parsed;
       } catch (e) {
         rejection = (e instanceof Error ? e.message : String(e)).slice(0, 400);

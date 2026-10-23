@@ -318,6 +318,24 @@ test("void is a refusal once someone has come to look", () => {
   );
 });
 
+test("every third night must be an assembly", () => {
+  // asking politely failed three nights running; one night in three is now forced
+  const plain = decision();
+  assert.doesNotThrow(() => assertConstitution(plain, emptyState, false, 20261030));
+  assert.throws(
+    () => assertConstitution(plain, emptyState, false, 20261031),
+    /assembly night — send "parts" with at least 2 parts/,
+  );
+  assert.doesNotThrow(
+    () => assertConstitution(decision({ parts: legalParts }), emptyState, false, 20261031),
+  );
+  // one part is not an assembly either
+  assert.throws(
+    () => assertConstitution(decision({ parts: [legalParts[0]] }), emptyState, false, 20261031),
+    /assembly night/,
+  );
+});
+
 // ---------------------------------------------------------------- signatures
 
 test("signing binds the signature to the hash and nothing else", () => {
