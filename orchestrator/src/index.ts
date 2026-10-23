@@ -40,7 +40,9 @@ async function hesitate(state: State, reason: string, attempts: RawAttempt[] = [
     id: workId,
     night: getNight(),
     title: "void",
-    intent: reason,
+    // Truncated: this path skips Decision.parse, so a multi-kilobyte stack trace
+    // used to land in the public log as `intent`.
+    intent: reason.slice(0, 200),
     form: "void",
     site,
     params: {},

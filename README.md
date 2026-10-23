@@ -472,7 +472,7 @@ jobs:
 
 | ไฟล์ | ทำอะไร |
 |---|---|
-| `index.html` | journal — ทุกคืน เรียงใหม่สุดขึ้นก่อน + verify hash chain ฝั่ง client |
+| `index.html` | **หน้าหลัก** — plot 3D เต็มจอ (iframe `timeline3d.html?embed=1`) + แถบสถิติ + ชิ้นงานล่าสุด + บันทึกทุกคืน · ยุบเป็นคอลัมน์เดียวต่ำกว่า 900px |
 | `timeline.html` | แผนผัง 512×512 (วงกลม = ชิ้นงาน) + กราฟ near/dwell + ตารางทุกคืน |
 | `timeline3d.html` | **plot 3 มิติ** — Three.js + OrbitControls, ลากหมุน/ซูม, hover อ่านบันทึก · `?src=sim.jsonl` = ชุดจำลอง 30 คืน |
 | `architecture.html` | แผนผังระบบทั้งหมด (SVG) |
@@ -573,18 +573,27 @@ node -e "const{createPublicKey,verify}=require('node:crypto'); ..."   # หร�
 - `npm run status` รายงาน `N/N works signed with Ed25519 and verified`
 - `npm run resync` exit **3** ถ้า signature ไม่ตรง (= entry ถูกแก้หลังเซ็น) แยกจาก exit 2 ที่ chain พัง
 
-## ยังค้าง — workflow v3 (ไฟล์พร้อมแปะที่ `~/Downloads/night.yml`)
+## ยังค้าง — workflow v4 (ไฟล์พร้อมแปะที่ `~/Downloads/night.yml`)
 
-โค้ดทุกอย่างในหัวข้อบนทำงานได้แล้ว แต่ workflow ที่รันอยู่จริงยังเป็น v2 ซึ่ง **ไม่รู้จักไฟล์ใหม่** สิ่งที่ v3 เพิ่ม:
+workflow ที่รันอยู่จริงคือ v3 ซึ่งทำงานได้ครบ แต่มีรูสองรูที่ทำให้ "คืนหายไปโดยไม่มีใครรู้" — ทั้งคู่แก้ใน v4:
 
 | เพิ่ม | เพราะ |
 |---|---|
-| step `Lint workflows` (actionlint 1.7.12) | บั๊กที่กินไป 2 คืนเป็น workflow defect ทั้งคู่ — ตรวจก่อนรัน |
-| step `Test` (`node --test`) | 14 เคส ก่อนใช้ runner สร้างงานจริง |
-| `NS_SIGNING_KEY` ใน env ของ `Run night` | ถ้าไม่มี signature ก็ไม่เกิด |
-| `file_pattern` เพิ่ม `site/raw/*.json site/telemetry.jsonl site/pubkey.pem` | ไฟล์ที่ runner เขียนแล้วไม่ถูก commit = หาย |
+| `concurrency: group: night-shift, cancel-in-progress: false` | `runNight()` เป็น read-then-write — สอง run ที่ทับกันอ่าน `ns:state` head เดียวกัน สร้างงานทั้งคู่ แล้ว PATCH ตัวหลังทับตำแหน่งของตัวแรก งานหนึ่งหลุดจาก index โดยที่ทั้งสอง run ขึ้นเขียว |
+| cron slot ที่สอง `0 23 * * *` | schedule ของ GitHub เป็น best-effort — run เดียวที่เคยเกิดมาสาย **2 ชม. 59 น.** และอีกสองคืนไม่เกิดเลย guard ทำให้ slot ที่สองเป็น no-op ถ้าอันแรกสำเร็จ |
+| `timeout-minutes: 20` | fetch ที่ค้างไม่ควรถือ concurrency group 6 ชั่วโมง (ค่า default) |
+| step `Validate NIGHT` | พิมพ์ `night` ผิดเคยไหลไปถึง hash เป็น `NaN` — ตอนนี้ exit 1 ก่อนเขียนอะไรเลย (มี guard ใน `getNight()` อีกชั้น) |
 
-> ไม่แปะก็ไม่พัง — raw/telemetry ยังถูกกู้จาก DataStore ด้วย `npm run resync` และ signature แค่ไม่มีคนเซ็น แต่จะเสีย lint/test ใน CI กับ commit ของไฟล์ใหม่
+> ไม่แปะก็ไม่พังคืนนั้น — แต่จะยังไม่มี concurrency lock และยังมี slot สำรอง
+> PAT ที่ใช้อยู่มี scope `repo` อย่างเดียว GitHub เลยปฏิเสธการเขียนไฟล์ใน `.github/workflows/` — ต้องแปะมือเหมือน v2/v3
+
+## รีเซ็ต plot (2026-10-24)
+
+plot ถูกล้างกลับไป genesis เพราะเลขคืนนำหน้าปฏิทินไป 11 คืน (ทุกคืนตั้งแต่ 20261025 สั่งมือ) จน cron ไม่มีทางตามทันและแยกไม่ออกว่าคืนไหนมาจากทางไหน
+
+- archive เต็มอยู่ที่ `~/Downloads/night-shift-archive-20261024.json` — `ns:state`, 16 works พร้อม signature, 10 raw, 2 telemetry (143 KB)
+- key ไม่มี delete scope → `ns:state` ถูก reset และ blob ถูก tombstone (`{wiped:true}`) ไม่ได้ลบจริง — อ่านเพิ่มใน `AUDIT.md`
+- คืนแรกของ plot ใหม่ = **20261024** ตามปฏิทิน ไม่ใช่เลขที่เลือกเอง
 
 ## Test
 
@@ -592,7 +601,7 @@ node -e "const{createPublicKey,verify}=require('node:crypto'); ..."   # หร�
 cd orchestrator && npm test      # build แล้วรัน node --test
 ```
 
-14 เคส ไม่มี dependency เพิ่ม (ใช้ `node:test` ในตัว) — ตอนนี้ **26 เคส**:
+14 เคส ไม่มี dependency เพิ่ม (ใช้ `node:test` ในตัว) — ตอนนี้ **28 เคส**:
 - hash vector จริง 2 ตัวที่อยู่บน chain แล้ว (`53822464967a18dc`, `65de0e2b02056c99`) — ถ้ามันเปลี่ยน hash ที่ประกาศไว้ทั้งหมดก็โกหก
 - สร้าง chain สุ่ม 300 ชุด ต้อง verify ผ่านทุกชุด และแก้ 1 field ต้องไม่ผ่านทุกชุด
 - กฎ constitution: lexicon / param bounds / site collision / repeat form
