@@ -10,7 +10,10 @@ const BUDGET = {
   // At 800 the reasoning ate the whole budget (finish_reason=length, 798 reasoning
   // tokens) and content came back EMPTY -> askLLM threw -> hesitate() wrote a void.
   // Measured: 800 -> 0% usable, 1500 -> content present, 2500 -> content present.
-  maxOutputTokens: 1500,
+  // 1500 is still too small for an assembly: a five-part list plus the reasoning
+  // that produced it came back truncated mid-object on 2026-11-01, and the
+  // truncation was read as a schema error rather than a length error.
+  maxOutputTokens: 4000,
   maxUsdPerNight: 0.10,
   maxRetries: 2,
 };

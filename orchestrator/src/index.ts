@@ -134,6 +134,27 @@ async function publishWork(work: Work): Promise<void> {
   }
 }
 
+
+/**
+ * Short enough to hand back to the model without eating the next prompt.
+ * A Zod error serialises to kilobytes of JSON; truncating it mid-string produced
+ * a rejection that began with "[" and told the model nothing.
+ */
+function describeRejection(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e);
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("[")) return trimmed.slice(0, 300);
+  try {
+    const issues = JSON.parse(trimmed) as { path?: (string | number)[]; message?: string }[];
+    return issues
+      .map((i) => `${(i.path ?? []).join(".") || "(root)"}: ${i.message}`)
+      .join("; ")
+      .slice(0, 300);
+  } catch {
+    return trimmed.slice(0, 300);
+  }
+}
+
 export async function runNight(): Promise<void> {
   const state = (await getEntry<State>("ns:state")) ?? {
     night: 0,
@@ -159,7 +180,9 @@ export async function runNight(): Promise<void> {
     // itself once before giving up.
     let d: Decision | null = null;
     let rejection = "";
-    for (let attempt = 1; attempt <= 2 && !d; attempt++) {
+    // Three, not two: a truncated answer burns an attempt, and a night with only
+    // two tries spends them on noise.
+    for (let attempt = 1; attempt <= 3 && !d; attempt++) {
       const raw = await askLLM(state, telemetry, rejection || undefined, (r) => {
         attempts.push({ attempt: attempts.length + 1, prompt: r.prompt, content: r.content });
       });
@@ -168,13 +191,13 @@ export async function runNight(): Promise<void> {
         assertConstitution(parsed, state, telemetry.length > 0);
         d = parsed;
       } catch (e) {
-        rejection = (e instanceof Error ? e.message : String(e)).slice(0, 400);
+        rejection = describeRejection(e);
         const last = attempts[attempts.length - 1];
         if (last) last.rejection = rejection;
         console.warn(`attempt ${attempt} rejected: ${rejection}`);
       }
     }
-    if (!d) throw new Error(`no valid decision after 2 attempts — last: ${rejection}`);
+    if (!d) throw new Error(`no valid decision after 3 attempts — last: ${rejection}`);
 
     const prevHash = state.journalHead;
 
