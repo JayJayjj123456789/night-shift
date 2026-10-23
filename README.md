@@ -222,6 +222,7 @@ NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d) node dist/status.js
 7. Schedule        ····  next cron 2026-10-23 02:00 Bangkok
 
   overall: chain INTACT
+  site: in sync with the DataStore
 ```
 
 **อ่านผล:**
@@ -233,7 +234,9 @@ NIGHT=$(TZ=Asia/Bangkok date +%Y%m%d) node dist/status.js
 | `FAIL` | พังจริง | แก้ก่อนคืนถัดไป |
 | `····` | ข้อมูลประกอบ | — |
 
-**exit code:** `0` = ปกติ, `2` = chain พัง, `1` = ต่อ Roblox ไม่ได้ — ใช้กับ CI ได้เลย
+**exit code:** `0` = ปกติ, `2` = chain พัง **หรือ** `site/log.jsonl` ตกหลัง DataStore (ขาด entry / ขาด preview), `1` = ต่อ Roblox ไม่ได้ — ใช้กับ CI ได้เลย
+
+> เดิมหัวข้อ 6 ขึ้นแค่ `WARN` ตอน log ขาด → CI เขียวทั้งที่เว็บตามไม่ทัน (เจอจริง 24 ต.ค.) ตอนนี้เป็น `FAIL` + `exit 2` แล้ว
 
 **ทำไมต้องมี:** ระบบนี้เคย "ดูเหมือนทำงาน" ทั้งที่พังจริง 3 จุด (void ไม่มี geometry, telemetry flush ทุก 5 วินาที, นับ journal เป็นงาน) คำสั่งนี้จับได้ทั้งหมดในที่เดียว
 
@@ -352,7 +355,7 @@ jobs:
 | `setup-node` | Node 20 + npm cache (key = package-lock.json) | เปลี่ยน `cache-dependency-path` ถ้า yml ย้ายที่ |
 | `npm ci` | install ตาม lockfile แม่นๆ | lockfile เก่า → `npm install` แล้ว commit lock ใหม่ |
 | `npm run build` | `tsc` → `dist/*.js` | TS error — รัน `npx tsc` ท้องถิ่นก่อน |
-| `Run night` | export `NIGHT` เป็นวันที่ไทย แล้วรัน orchestrator | 401/403 → key issue; LLM error → quota |
+| `Run night` | export `NIGHT` เป็นวันที่ไทย แล้วรัน orchestrator · ถ้า LLM ตอบผิดกฎจะได้แก้ตัว **1 ครั้ง** (ส่งข้อหาไปบอก) ก่อนยอมแพ้เป็น void | 401/403 → key issue; LLM error → quota |
 | `Resync site log` | ดึง `ns:state` + `ns:work:*` ทั้งหมดมาเขียน `site/log.jsonl` ใหม่ + preview ที่ขาด (DataStore = ความจริง, ไฟล์ใน repo = ของที่ derive มา) | `if: always()` — ทำงานแม้คืนนี้ล้ม เพื่อซ่อมช่องว่างจากคืนก่อน · **ยังไม่ apply ใน workflow จริง** (ดูหมายเหตุเหนือบล็อก yaml) |
 | `git-auto-commit` | push `site/log.jsonl` + `previews/*.svg` กลับเข้า repo | ต้องมี `permissions: contents: write` ที่ระดับ workflow — ไม่งั้น commit ผ่านแต่ push 403 |
 
@@ -497,3 +500,5 @@ jobs:
 | Night Shift แดงที่ step `Commit log + previews` — `Permission to ... denied to github-actions[bot]` + `403` | workflow ไม่มี `permissions: contents: write` (default ของ `GITHUB_TOKEN` ใน repo นี้ = read-only) → commit เกิดบน runner แต่ push ไม่ผ่าน แล้ว runner ตายทิ้ง commit ไป | เพิ่ม `permissions: contents: write` ที่ระดับ workflow · คืนที่หลุดไปแล้วกู้ด้วย `npm run resync` (DataStore ยังมี work ครบ) |
 | เว็บโชว์งานน้อยกว่า DataStore 1 คืน | ผลข้างเคียงของ 403 ข้างบน — `log.jsonl` ใน repo ตกหล่น แต่ `ns:state` ไม่ตก | `npm run resync` แล้ว commit; ตั้งแต่มี step Resync ใน workflow มันจะซ่อมเองทุกคืน |
 | หลังแก้ token แล้ว เว็บขึ้น `chain broken at n{คืนนี้}` | งานของคืนที่หายไปยังไม่อยู่ในไฟล์ → งานคืนนี้ chain ไปเกาะ hash ที่ไม่มีในไฟล์ | ต้อง `npm run resync` **ก่อน** คืนถัดไปรัน ไม่งั้นยิ่ง push ได้ยิ่งพัง (เจอจริง: กู้ `n20261023-a` แล้วไฟล์กลับมา verify ผ่าน 3 entries) |
+| run เขียวทั้งที่เว็บไม่ขยับ | `hesitate()` เคยไม่เขียน log/preview → ไม่มีอะไรให้ commit → step `success` แบบไม่ทำอะไร | แก้แล้ว: ทุกผลลัพธ์ผ่าน `publishWork()` · และ status หัวข้อ 6 เป็น `FAIL` แล้ว ไม่ใช่ `WARN` |
+| `lexicon: title has [...]` แล้วได้ void | โมเดลเขียนคำนอกลิสต์ 200 คำ (พบบ่อย: `the` `a` `of` และชื่อ form เอง) | มี retry 1 ครั้งพร้อมบอกคำที่ผิดแล้ว · prompt เตือนเรื่อง article/of/form name ชัดขึ้น |

@@ -62,6 +62,7 @@ async function main() {
   console.log("\n\x1b[1m2. Hash chain\x1b[0m");
   let prev = "genesis";
   let chainOk = true;
+  let siteOk = true;
   const workDocs: Work[] = [];
   for (const ref of state.works) {
     const w = await getEntry<Work>(`ns:work:${ref.id}`);
@@ -138,15 +139,23 @@ async function main() {
     ok(true, `site/log.jsonl has ${lines.length} entr${lines.length === 1 ? "y" : "ies"}`);
     const ids = lines.map((l) => JSON.parse(l).id);
     const missing = state.works.map((w) => w.id).filter((id) => !ids.includes(id));
-    if (missing.length) warn(`log.jsonl is missing: ${missing.join(", ")}`);
-    else ok(true, "log.jsonl matches DataStore works");
+    // A FAIL, not a WARN: the DataStore is the truth and the file is derived, so
+    // a file that is behind is a broken public site, not a hint. This used to
+    // warn, which let CI stay green through exactly this drift on 2026-10-24.
+    if (missing.length) {
+      ok(false, `log.jsonl is missing: ${missing.join(", ")}`, "run `npm run resync`");
+      siteOk = false;
+    } else ok(true, "log.jsonl matches DataStore works");
   } else {
     warn("site/log.jsonl not found");
+    siteOk = false;
   }
   const prevDir = join(__dirname, "..", "..", "site", "previews");
   const noPreview = state.works.filter((w) => !existsSync(join(prevDir, `${w.id}.svg`)));
-  if (noPreview.length) warn(`missing preview svg: ${noPreview.map((w) => w.id).join(", ")}`);
-  else if (state.works.length) ok(true, "every work has a preview svg");
+  if (noPreview.length) {
+    ok(false, `missing preview svg: ${noPreview.map((w) => w.id).join(", ")}`, "run `npm run resync`");
+    siteOk = false;
+  } else if (state.works.length) ok(true, "every work has a preview svg");
 
   // ---------- 7. Next expected run ----------
   console.log("\n\x1b[1m7. Schedule\x1b[0m");
@@ -159,9 +168,10 @@ async function main() {
 
   console.log("");
   console.log(chainOk ? G("  overall: chain INTACT") : R("  overall: chain BROKEN"));
+  console.log(siteOk ? G("  site: in sync with the DataStore") : R("  site: BEHIND — run `npm run resync`"));
   console.log("");
-  // non-zero exit so CI fails fast on a broken chain
-  if (!chainOk) process.exit(2);
+  // non-zero exit so CI fails fast on a broken chain or a stale public site
+  if (!chainOk || !siteOk) process.exit(2);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
