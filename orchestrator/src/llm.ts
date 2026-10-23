@@ -271,33 +271,23 @@ ${lastForm ? `The previous work was form "${lastForm}", so you may NOT use form 
 ${telemetry.length ? "There IS attention data, so you should NOT return void. Build a real work." : "There is no attention data yet, so you may return void if you truly have nothing."}
 
 ASSEMBLING
-Most nights you should compose the work yourself instead of picking one of the six
-forms. Add a "parts" array of 2 to ${PARTS_BUDGET} parts. Each part is:
+Most nights compose the work yourself instead of picking one of the six forms: a
+"parts" array of 2 to ${PARTS_BUDGET} parts. Each part:
+  shape: block | cylinder | sphere | wedge | cone | torus | plate
+  size:  [width, height, depth] studs — round shapes read width as diameter
+  pos:   [x, y, z] from the site, y is the part's CENTRE height
+  rot:   [x, y, z] degrees, optional
+  color: ${PALETTE.join(" ")}
+  material: ${MATERIALS.join(" ")}
+  emissive: 0-2, above 1 is a light · spin: -60..60 deg/s · float: 0-6 studs
+Enforced: at most ${PARTS_BUDGET} parts, within 64 studs of the site, nothing above
+90 studs, total volume under 30000.
 
-{
-  "shape": "block" | "cylinder" | "sphere" | "wedge" | "cone" | "torus" | "plate",
-  "size":  [width, height, depth] in studs,
-  "pos":   [x, y, z] — offset from the site, y is the part's CENTRE height,
-  "rot":   [x, y, z] degrees, optional,
-  "color": ${PALETTE.join(" | ")},
-  "material": ${MATERIALS.join(" | ")},
-  "emissive": 0 to 2 (0 = ordinary, above 1 = a light),
-  "spin": degrees per second, -60 to 60, optional,
-  "float": bob amplitude in studs, 0 to 6, optional
-}
+Build parts when the idea has more than one thing in it. Two or three well-placed
+parts beat eight. A single shape is allowed only when the idea really is one thing.
+Never dump a pile of boxes, and never send "parts" with a single entry.
 
-Limits, enforced: at most ${PARTS_BUDGET} parts; every part within 64 studs of the
-site; nothing above 90 studs; total volume under 30000 cubic studs.
-
-How to decide: if you catch yourself describing something with more than one thing
-in it — a tower with a leaning member and a lamp, a ring that turns above a slab, a
-plinth under a plate — build it out of parts. Two or three well-placed parts read
-stronger than eight. A single shape is allowed only when the idea really is one
-thing: one stone, one lamp, one wall. Never dump a pile of boxes for the sake of
-having parts, and never return "parts" with only one entry — if a form already
-holds the whole idea, pick the form instead.
-
-The title names the thing, not the action. "bright night sky", not "build near
+The title names the thing, not the action: "bright night sky", not "build near
 light".
 
 Do not build the same thing twice. Vary the form, the title and the location from

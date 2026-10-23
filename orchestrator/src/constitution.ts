@@ -55,13 +55,21 @@ function findViolations(text: string): string[] {
   return words.filter((w) => !LEXICON.has(w));
 }
 
-export function assertConstitution(d: Decision, state: State): void {
+export function assertConstitution(d: Decision, state: State, hasAttention = false): void {
   const titleBad = findViolations(d.title);
   const journalBad = findViolations(d.journal);
   if (titleBad.length || journalBad.length) {
     throw new Error(
       `lexicon: title has [${titleBad.join(",")}], journal has [${journalBad.join(",")}]`,
     );
+  }
+
+  // A void is the honest answer when nobody has ever come to look. With attention
+  // data on the table it is a refusal to answer, and the model used it as one:
+  // on 2026-10-29 it returned a perfectly valid void while telemetry existed and
+  // the night produced nothing. Reject it, so the retry has to respond.
+  if (d.form === "void" && hasAttention) {
+    throw new Error("void is not allowed while attention data exists — respond to it");
   }
 
   for (const [k, v] of Object.entries(d.params)) {

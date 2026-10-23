@@ -304,6 +304,20 @@ test("an assembly is not a hesitation", () => {
   );
 });
 
+test("void is a refusal once someone has come to look", () => {
+  // 2026-10-29: the model returned a perfectly valid void while telemetry
+  // existed, and the night produced nothing
+  const voidDecision = {
+    title: "void", intent: "x", form: "void", site: { x: 200, z: 200 },
+    params: {}, journal: "void no", risk: "low",
+  };
+  assert.doesNotThrow(() => assertConstitution(voidDecision, emptyState, false));
+  assert.throws(
+    () => assertConstitution(voidDecision, emptyState, true),
+    /void is not allowed while attention/,
+  );
+});
+
 // ---------------------------------------------------------------- signatures
 
 test("signing binds the signature to the hash and nothing else", () => {
