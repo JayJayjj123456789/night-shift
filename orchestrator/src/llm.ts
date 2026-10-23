@@ -270,9 +270,9 @@ ${formBlock}
 ${lastForm ? `The previous work was form "${lastForm}", so you may NOT use form "${lastForm}" tonight. Pick a different form.` : ""}
 ${telemetry.length ? "There IS attention data, so you should NOT return void. Build a real work." : "There is no attention data yet, so you may return void if you truly have nothing."}
 
-ASSEMBLING (optional)
-You may also compose the work yourself instead of picking one of the six forms.
-Add a "parts" array of up to ${PARTS_BUDGET} parts. Each part is:
+ASSEMBLING
+Most nights you should compose the work yourself instead of picking one of the six
+forms. Add a "parts" array of 2 to ${PARTS_BUDGET} parts. Each part is:
 
 {
   "shape": "block" | "cylinder" | "sphere" | "wedge" | "cone" | "torus" | "plate",
@@ -289,10 +289,16 @@ Add a "parts" array of up to ${PARTS_BUDGET} parts. Each part is:
 Limits, enforced: at most ${PARTS_BUDGET} parts; every part within 64 studs of the
 site; nothing above 90 studs; total volume under 30000 cubic studs.
 
-Use it when one shape cannot hold the idea — a tower with a leaning member and a
-lamp, a ring that turns, a plinth under a slab. Do not use it to dump a pile of
-boxes; fewer parts, better placed, reads stronger. If a form already fits, leave
-"parts" out entirely.
+How to decide: if you catch yourself describing something with more than one thing
+in it — a tower with a leaning member and a lamp, a ring that turns above a slab, a
+plinth under a plate — build it out of parts. Two or three well-placed parts read
+stronger than eight. A single shape is allowed only when the idea really is one
+thing: one stone, one lamp, one wall. Never dump a pile of boxes for the sake of
+having parts, and never return "parts" with only one entry — if a form already
+holds the whole idea, pick the form instead.
+
+The title names the thing, not the action. "bright night sky", not "build near
+light".
 
 Do not build the same thing twice. Vary the form, the title and the location from
 every work that already exists. Read the list above and choose something new.
