@@ -203,7 +203,21 @@ async function main() {
   if (existsSync(logPath)) {
     const lines = readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean);
     ok(true, `site/log.jsonl has ${lines.length} entr${lines.length === 1 ? "y" : "ies"}`);
-    const ids = lines.map((l) => JSON.parse(l).id);
+    // A line that does not parse is a broken public site, not a crash — status is
+    // the tool you run when something is wrong, so it reports instead of throwing.
+    const ids: string[] = [];
+    let badLines = 0;
+    for (const l of lines) {
+      try {
+        ids.push((JSON.parse(l) as { id: string }).id);
+      } catch {
+        badLines++;
+      }
+    }
+    if (badLines) {
+      ok(false, `${badLines} unparseable line(s) in log.jsonl`, "run `npm run resync`");
+      siteOk = false;
+    }
     const missing = state.works.map((w) => w.id).filter((id) => !ids.includes(id));
     // A FAIL, not a WARN: the DataStore is the truth and the file is derived, so
     // a file that is behind is a broken public site, not a hint. This used to
@@ -211,7 +225,7 @@ async function main() {
     if (missing.length) {
       ok(false, `log.jsonl is missing: ${missing.join(", ")}`, "run `npm run resync`");
       siteOk = false;
-    } else ok(true, "log.jsonl matches DataStore works");
+    } else if (!badLines) ok(true, "log.jsonl matches DataStore works");
   } else {
     warn("site/log.jsonl not found");
     siteOk = false;
@@ -225,10 +239,15 @@ async function main() {
 
   // ---------- 7. Next expected run ----------
   console.log("\n\x1b[1m7. Schedule\x1b[0m");
+  // Two slots since v4: 19:00 UTC (02:00 TH) and 23:00 UTC (06:00 TH, the retry).
   const now = new Date();
-  const next = new Date(now);
-  next.setUTCHours(19, 0, 0, 0);
-  if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
+  const slots = [19, 23].map((h) => {
+    const d = new Date(now);
+    d.setUTCHours(h, 0, 0, 0);
+    if (d <= now) d.setUTCDate(d.getUTCDate() + 1);
+    return d;
+  });
+  const next = slots.sort((a, b) => a.getTime() - b.getTime())[0];
   info(`next cron: ${next.toISOString()} UTC = ${new Date(next.getTime() + 7 * 3600e3).toISOString().slice(0, 16)} Bangkok`);
   info(`hours until: ${((next.getTime() - now.getTime()) / 3600e3).toFixed(2)}`);
 

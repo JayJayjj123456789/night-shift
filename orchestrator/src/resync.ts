@@ -40,11 +40,20 @@ export type ResyncReport = {
 async function readExisting(): Promise<Work[]> {
   if (!existsSync(LOG)) return [];
   const text = await readFile(LOG, "utf8");
-  return text
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((l) => JSON.parse(l) as Work);
+  const out: Work[] = [];
+  let bad = 0;
+  for (const line of text.trim().split("\n").filter(Boolean)) {
+    // A half-written line used to throw here, which took down the one tool that
+    // can repair the file. The file is derived — a line that cannot be parsed is
+    // exactly what this function is here to discard.
+    try {
+      out.push(JSON.parse(line) as Work);
+    } catch {
+      bad++;
+    }
+  }
+  if (bad) console.warn(`resync: ignoring ${bad} unparseable line(s) in log.jsonl`);
+  return out;
 }
 
 /**

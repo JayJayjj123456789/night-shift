@@ -144,6 +144,58 @@ Signatures cover it for signed works — after the wipe, everything is signed.
 **Worth watching:** the prompt should eventually summarise old works rather than
 list them all.
 
+## S1 — rotating the signing key bricks the pipeline
+
+`writePublicKey()` overwrites `site/pubkey.pem` with whatever key is in
+`NS_SIGNING_KEY`. `resync` verifies every signed work against **that** key and
+exits **3** on a mismatch. So the moment the secret is regenerated:
+
+1. the next night signs with the new key,
+2. `pubkey.pem` is overwritten,
+3. every previously signed work now fails verification,
+4. `resync` exits 3 → the workflow fails → **and every night after it fails too**,
+   because the old signatures can never verify against the new public key.
+
+The pipeline does not degrade; it stops, permanently, with an error that looks
+exactly like tampering. And there is nothing in the code that says "this is a key
+rotation" — it is indistinguishable from someone editing history.
+
+**Open.** The fix is small and worth doing before the key is ever rotated: publish
+keys append-only (`site/pubkeys/{fingerprint}.pem`), keep `pubkey.pem` as the
+current one for the site, and have `resync` accept a signature that verifies
+against *any* published key. Until then the rule is: **never regenerate
+`NS_SIGNING_KEY`** — losing the private key is survivable (works become unsigned),
+replacing it is not.
+
+## S2 — the game and the site can disagree and nothing notices
+
+`src/builder.lua` is installed into the place by `tools/install-studio.py`, which
+needs Studio open, the place loaded and the MCP bridge enabled. It is a manual
+step. `builder.lua` was edited on 2026-10-24; whether the running place has that
+version is unknowable from the repo.
+
+If they drift, the site shows a work that the game builds differently — or does
+not build at all — and every check in this system still passes, because every
+check reads the orchestrator, never the place.
+
+**Open.** `Work.builderVersion` already exists and is hardcoded to `1`; it is never
+bumped and never compared. The cheap fix: have `builder.lua` write its own hash to
+`ns:builder` on startup, and have `status` compare it with the repo's file. Then
+drift is a red line instead of a mystery.
+
+## S3 — latent: the preview writes the title into SVG unescaped
+
+`preview.ts` interpolates `w.title` straight into `<text>`. That is safe **only**
+because the 200-word lexicon cannot produce `<` or `&`. It is one schema change
+away from being an injection, and it would be a silent one. Same in `renderParts`.
+
+## S3 — the site and the store disagree about what "empty" means
+
+`resync` writes `"\n"` for an empty plot, `index.html` trims it to nothing, and the
+3D page draws the ground with no works. All three agree today; none of them is
+tested against zero works. The 2026-10-24 reset was the first time the site had
+ever run with an empty plot — and it was broken (black rectangle).
+
 ---
 
 ## Closed today
@@ -159,6 +211,8 @@ list them all.
 | a malformed `NIGHT` became `night: NaN` in the hash | refused at `getNight()` |
 | a multi-KB stack trace became a public `intent` | truncated to 200 |
 | a green CI step with nothing committed looked like success | `status` exits 2 on site drift |
+| `resync`/`status` died on a half-written line in log.jsonl — the repair tool killed by the thing it repairs | a line that will not parse is skipped, reported, and rewritten from the store |
+| `status` thought the schedule had one slot | it knows both, and which one is next |
 
 ## What I would watch first
 
