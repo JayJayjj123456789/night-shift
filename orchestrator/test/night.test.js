@@ -460,6 +460,22 @@ test("an impossible NIGHT degrades instead of throwing", () => {
 
 // ---------------------------------------------------------------- signatures
 
+test("the preview escapes the title instead of pasting it into the SVG", () => {
+  // Latent today (the lexicon cannot produce '<'), but the void path writes a raw
+  // error string as intent and one schema change is all that separates the two.
+  const { renderPreview } = require("../dist/preview.js");
+  const base = {
+    id: "n20260101-a", night: 20260101, title: 'a<b>&"c', intent: "x",
+    site: { x: 0, z: 0 }, params: {}, journal: "stone", prevHash: "genesis",
+    hash: "0000000000000000", seed: 20260101, builderVersion: 1,
+  };
+  for (const form of ["monolith", "text", "void"]) {
+    const svg = renderPreview({ ...base, form });
+    assert.ok(!svg.includes("<b>"), `${form}: raw markup reached the SVG`);
+    assert.ok(svg.includes("a&lt;b&gt;"), `${form}: title was not escaped`);
+  }
+});
+
 test("the builder version crosses the gap between the repo and the place", () => {
   // The repo cannot read the running place and the place cannot read the repo.
   // BUILDER_VERSION is the only thing that travels, so its comparison is the

@@ -23,6 +23,20 @@ const PART_COLOR: Record<string, string> = {
   violet: "#8b6bd9",
 };
 
+/**
+ * XML-escape text before it goes into the SVG.
+ *
+ * The title is model output. Today the 200-word lexicon makes `<` and `&`
+ * impossible, so this is latent rather than live — but the SVG is also written
+ * for the `void` path, whose `intent` is a raw error string, and one schema
+ * change is all that separates "cannot contain markup" from "does".
+ */
+function esc(s: string): string {
+  return String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" }[c] as string),
+  );
+}
+
 function partSize(p: Part): { w: number; h: number; d: number } {
   // block/plate/wedge use all three; round shapes read width as diameter
   switch (p.shape) {
@@ -74,7 +88,7 @@ export function renderPreview(w: Work): string {
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
     <rect width="512" height="512" fill="#111"/>
     ${renderParts(cx, cy, w.parts)}
-    <text x="8" y="500" fill="#888" font-size="10">${w.id} · ${w.title}</text>
+    <text x="8" y="500" fill="#888" font-size="10">${esc(w.id)} · ${esc(w.title)}</text>
   </svg>`;
   }
 
@@ -118,7 +132,7 @@ export function renderPreview(w: Work): string {
     }
     case "text": {
       const sz = 10 + Math.round((p.size ?? 0.5) * 14);
-      body = `<text x="${cx}" y="${cy}" font-size="${sz}" fill="${c}" text-anchor="middle" font-family="monospace">${w.title.slice(0, 6)}</text>`;
+      body = `<text x="${cx}" y="${cy}" font-size="${sz}" fill="${c}" text-anchor="middle" font-family="monospace">${esc(w.title.slice(0, 6))}</text>`;
       break;
     }
     case "light": {
@@ -140,6 +154,6 @@ export function renderPreview(w: Work): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
     <rect width="512" height="512" fill="#111"/>
     ${body}
-    <text x="8" y="500" fill="#888" font-size="10">${w.id} · ${w.title}</text>
+    <text x="8" y="500" fill="#888" font-size="10">${esc(w.id)} · ${esc(w.title)}</text>
   </svg>`;
 }
