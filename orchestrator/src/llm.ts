@@ -260,8 +260,8 @@ ${words}
 There are exactly 200 of them and nothing else counts. In particular there are
 no articles and no "of": "the", "a", "an" and "of" are NOT in the list and will
 get the whole night rejected. Write "small stone under moon", never "a small
-stone under the moon". The form names are not in the list either — do not write
-"garden", "monolith", "machine" or "text" in title or journal.
+stone under the moon". Of the form names, "garden", "monolith" and "text" are
+also absent — do not put those three in title or journal.
 
 FORMS AND THEIR PARAMETERS
 ${paramSpec}
@@ -295,6 +295,7 @@ export async function askLLM(
   state: State,
   telemetry: Attention[],
   rejection?: string,
+  sink?: (r: { prompt: string; content: string }) => void,
 ): Promise<unknown> {
   const prompt =
     buildPrompt(state, telemetry) +
@@ -305,6 +306,10 @@ export async function askLLM(
 
   // ---- LLM call with retry + budget guard ----
   let lastErr: unknown;
+  // JSON mode: the provider refuses anything that is not a JSON object, so a
+  // stray "Sure, here is your JSON" preamble can never reach Decision.parse.
+  // Some models reject the parameter outright, so it is dropped after a 400.
+  let jsonMode = true;
   for (let attempt = 0; attempt <= BUDGET.maxRetries; attempt++) {
     // Reasoning-heavy models need headroom; give later attempts more room.
     const maxTokens = BUDGET.maxOutputTokens + attempt * 500;
@@ -320,8 +325,17 @@ export async function askLLM(
           messages: [{ role: "user", content: prompt }],
           max_tokens: maxTokens,
           temperature: 0.9,
+          ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
         }),
       });
+
+      if (r.status === 400 && jsonMode) {
+        // the provider does not support response_format — retry without it
+        const body = await r.text();
+        console.warn(`LLM 400 with response_format, dropping it: ${body.slice(0, 200)}`);
+        jsonMode = false;
+        throw new Error(`LLM 400 response_format unsupported: ${body.slice(0, 200)}`);
+      }
 
       if (r.status === 429) {
         // Groq TPM limit (8000 tokens/min on the free tier). A 1500-token request
@@ -339,6 +353,10 @@ export async function askLLM(
       };
       const choice = data.choices?.[0];
       const raw = choice?.message?.content ?? "";
+      // hand the exchange to the caller before parsing — a rejected answer is
+      // the most interesting thing the model produces, and it used to be thrown
+      // away with the exception
+      sink?.({ prompt, content: raw });
 
       if (!raw.trim()) {
         // finish_reason=length with 0 content means the reasoning ate the whole

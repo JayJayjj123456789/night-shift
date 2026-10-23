@@ -7,8 +7,17 @@ import { computeHash } from "./hash";
 import { assertConstitution } from "./constitution";
 import { askLLM, readTelemetry } from "./llm";
 import { renderPreview } from "./preview";
+import { signHash, writePublicKey } from "./sign";
 
-async function hesitate(state: State, reason: string): Promise<void> {
+/** One model answer, kept whether it was accepted or not. */
+export type RawAttempt = {
+  attempt: number;
+  prompt?: string;
+  content?: string;
+  rejection?: string;
+};
+
+async function hesitate(state: State, reason: string, attempts: RawAttempt[] = []): Promise<void> {
   const prevHash = state.journalHead;
   const journal = "void no"; // both words are in the 200-word lexicon
   const usedIds = new Set(state.works.map((w) => w.id));
@@ -30,6 +39,7 @@ async function hesitate(state: State, reason: string): Promise<void> {
     journal,
     prevHash,
     hash,
+    sig: signHash(hash) ?? undefined,
     builderVersion: 1,
   };
   await putEntry(`ns:work:${work.id}`, work);
@@ -41,6 +51,7 @@ async function hesitate(state: State, reason: string): Promise<void> {
   });
   await publish("nightshift", { type: "new_work", id: work.id });
   await publishWork(work);
+  await writeRaw(workId, "hesitated", reason, attempts);
   console.log(`hesitated (${reason}) — wrote ${work.id}`);
 }
 
@@ -63,6 +74,39 @@ async function appendPublicLog(work: Work): Promise<void> {
     await fs.appendFile(join(SITE_DIR, "log.jsonl"), line, "utf8");
   } catch (e) {
     console.warn("appendPublicLog failed:", e);
+  }
+}
+
+/**
+ * Keep the model exchange next to the result. A rejected answer is the most
+ * interesting thing the model produces, and until now it existed only as an
+ * error string inside `intent` — "why did it write garden that night" was
+ * unanswerable an hour later.
+ */
+async function writeRaw(
+  id: string,
+  outcome: "built" | "hesitated",
+  reason: string,
+  attempts: RawAttempt[],
+): Promise<void> {
+  const fs = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  try {
+    const dir = join(SITE_DIR, "raw");
+    await fs.mkdir(dir, { recursive: true });
+    const record = {
+      id,
+      night: getNight(),
+      outcome,
+      reason,
+      model: process.env.LLM_MODEL ?? "unknown",
+      signed: Boolean(process.env.NS_SIGNING_KEY),
+      attempts,
+      at: new Date().toISOString(),
+    };
+    await fs.writeFile(join(dir, `${id}.json`), JSON.stringify(record, null, 2) + "\n", "utf8");
+  } catch (e) {
+    console.warn("writeRaw failed:", e);
   }
 }
 
@@ -99,7 +143,9 @@ export async function runNight(): Promise<void> {
     return;
   }
 
+  const attempts: RawAttempt[] = [];
   try {
+    writePublicKey(); // publish site/pubkey.pem the first time a key is present
     const telemetry = await readTelemetry(state);
 
     // One shot used to be the whole story: if the model broke a rule, the night
@@ -110,13 +156,17 @@ export async function runNight(): Promise<void> {
     let d: Decision | null = null;
     let rejection = "";
     for (let attempt = 1; attempt <= 2 && !d; attempt++) {
-      const raw = await askLLM(state, telemetry, rejection || undefined);
+      const raw = await askLLM(state, telemetry, rejection || undefined, (r) => {
+        attempts.push({ attempt: attempts.length + 1, prompt: r.prompt, content: r.content });
+      });
       try {
         const parsed = Decision.parse(raw);
         assertConstitution(parsed, state);
         d = parsed;
       } catch (e) {
         rejection = (e instanceof Error ? e.message : String(e)).slice(0, 400);
+        const last = attempts[attempts.length - 1];
+        if (last) last.rejection = rejection;
         console.warn(`attempt ${attempt} rejected: ${rejection}`);
       }
     }
@@ -144,6 +194,7 @@ export async function runNight(): Promise<void> {
       seed: getNight(),
       prevHash,
       hash,
+      sig: signHash(hash) ?? undefined,
       builderVersion: 1,
     };
 
@@ -158,10 +209,11 @@ export async function runNight(): Promise<void> {
     await publish("nightshift", { type: "new_work", id: work.id, site: work.site, form: work.form });
 
     await publishWork(work);
+    await writeRaw(work.id, "built", "", attempts);
     console.log(`built ${work.id} — ${d.form} at (${d.site.x}, ${d.site.z}) hash=${hash}`);
   } catch (e) {
     console.warn("runNight failed, hesitating:", e);
-    await hesitate(state, String(e));
+    await hesitate(state, String(e), attempts);
   }
 }
 

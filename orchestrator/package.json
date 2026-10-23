@@ -8,7 +8,7 @@
     "night": "node dist/index.js",
     "status": "node dist/status.js",
     "resync": "node dist/resync.js",
-    "test": "node dist/status.js"
+    "test": "npm run build && node --test test/night.test.js"
   },
   "dependencies": {
     "zod": "^3.22.0"

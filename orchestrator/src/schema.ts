@@ -58,6 +58,8 @@ export type Work = {
   journal: string;         // <= 280 chars
   prevHash: string;
   hash: string;
+  /** base64 Ed25519 signature over `hash` — absent when no signing key is set. */
+  sig?: string;
   builderVersion: 1;
 };
 

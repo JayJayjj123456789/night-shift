@@ -2,6 +2,7 @@
 // Usage: npm run status   (reads .env via env.ts)
 import "./env";
 import { getEntry, getNight } from "./datastore";
+import { publicKeyPem, verifyHash } from "./sign";
 import { createHash } from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -13,7 +14,7 @@ const MIN_SITE_DISTANCE = 30;
 type Work = {
   id: string; night: number; title: string; intent: string;
   form: string; site: { x: number; z: number }; params: Record<string, number>;
-  journal: string; prevHash: string; hash: string; seed: number;
+  journal: string; prevHash: string; hash: string; seed: number; sig?: string;
 };
 type State = { night: number; journalHead: string; works: { id: string; site: { x: number; z: number }; form: string }[]; plot: { size: number } };
 
@@ -83,6 +84,24 @@ async function main() {
   if (chainOk && state.works.length) ok(true, `chain head matches state.journalHead (${state.journalHead})`,
      state.journalHead !== prev ? `state head=${state.journalHead} but last work hash=${prev}` : "");
   if (state.journalHead !== prev) chainOk = false;
+
+  // signatures: a hash chain alone is self-referential, a signature is not
+  const pub = publicKeyPem();
+  if (pub) {
+    const signed = workDocs.filter((w) => w.sig);
+    const bad = signed.filter((w) => !verifyHash(w.hash, w.sig as string, pub)).map((w) => w.id);
+    if (bad.length) {
+      ok(false, `${bad.length} signature(s) do not verify: ${bad.join(", ")}`, "entry changed after signing");
+      chainOk = false;
+    } else if (signed.length) {
+      ok(true, `${signed.length}/${workDocs.length} works signed with Ed25519 and verified`);
+      if (signed.length < workDocs.length) info(`${workDocs.length - signed.length} older work(s) predate signing`);
+    } else {
+      info("pubkey present but no entry is signed yet — signing starts on the next night");
+    }
+  } else {
+    info("no site/pubkey.pem — entries are hash-chained only");
+  }
 
   // ---------- 3. Tonight's state ----------
   console.log("\n\x1b[1m3. Tonight\x1b[0m");
