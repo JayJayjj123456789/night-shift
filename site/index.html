@@ -36,7 +36,11 @@ async function sha256Hex(str) {
 async function verifyChain(entries) {
   let prev = "genesis";
   for (const e of entries) {
-    const payload = JSON.stringify([e.night, e.title, e.form, e.site.x, e.site.z, e.journal, prev]);
+    // parts are hashed only when the work has them, so entries published before
+    // the parts schema keep the exact hash they were signed with
+    const base = [e.night, e.title, e.form, e.site.x, e.site.z, e.journal, prev];
+    if (e.parts !== undefined && e.parts !== null) base.push(e.parts);
+    const payload = JSON.stringify(base);
     const full = await sha256Hex(payload);
     const expected = full.slice(0, 16);
     if (expected !== e.hash) {

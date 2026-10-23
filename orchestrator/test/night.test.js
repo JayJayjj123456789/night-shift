@@ -240,6 +240,70 @@ test("repeating last night's form is refused", () => {
   );
 });
 
+// ---------------------------------------------------------------- parts
+
+const legalParts = [
+  { shape: "block", size: [16, 42, 16], pos: [0, 21, 0], color: "bone", material: "stone" },
+  { shape: "sphere", size: [3, 3, 3], pos: [11, 21, 6], color: "amber", material: "neon", emissive: 1 },
+  { shape: "torus", size: [14, 0.8, 0.8], pos: [0, 26, 0], color: "sky", material: "neon", rot: [90, 0, 0] },
+];
+
+test("a work with parts still hashes the way a work without them does", () => {
+  // the compatibility rule: parts are appended only when present, so the six
+  // published hashes keep verifying. A null for the old ones would break entry 1.
+  const withoutParts = computeHash(20261022, "void", "void", 0, 0, "ฉันลังเล", "genesis");
+  assert.strictEqual(withoutParts, "53822464967a18dc");
+  const withParts = computeHash(20261022, "void", "void", 0, 0, "ฉันลังเล", "genesis", legalParts);
+  assert.notStrictEqual(withParts, withoutParts);
+  assert.strictEqual(
+    computeHash(20261022, "void", "void", 0, 0, "ฉันลังเล", "genesis", legalParts),
+    withParts,
+  );
+});
+
+test("editing a part list breaks the hash like editing a title does", () => {
+  const base = computeHash(20261028, "stone", "monolith", 10, 20, "stone under moon", "genesis", legalParts);
+  const moved = legalParts.map((p, i) => (i === 1 ? { ...p, pos: [12, 21, 6] } : p));
+  const recoloured = legalParts.map((p, i) => (i === 0 ? { ...p, color: "rust" } : p));
+  assert.notStrictEqual(
+    computeHash(20261028, "stone", "monolith", 10, 20, "stone under moon", "genesis", moved), base,
+  );
+  assert.notStrictEqual(
+    computeHash(20261028, "stone", "monolith", 10, 20, "stone under moon", "genesis", recoloured), base,
+  );
+  // and dropping the whole list changes it too — an assembly cannot be removed silently
+  assert.notStrictEqual(
+    computeHash(20261028, "stone", "monolith", 10, 20, "stone under moon", "genesis"), base,
+  );
+});
+
+test("parts are capped, contained and volume-limited", () => {
+  const many = Array.from({ length: 9 }, (_, i) => ({
+    shape: "block", size: [2, 2, 2], pos: [i * 3 - 12, 1, 0], color: "slate",
+  }));
+  assert.throws(() => assertConstitution(decision({ parts: many }), emptyState), /budget of 8/);
+  assert.throws(
+    () => assertConstitution(decision({ parts: [{ ...legalParts[0], pos: [70, 21, 0] }] }), emptyState),
+    /outside 64 studs/,
+  );
+  assert.throws(
+    () => assertConstitution(decision({ parts: [{ ...legalParts[0], pos: [0, 80, 0] }] }), emptyState),
+    /past 90 studs tall/,
+  );
+  const wall = Array.from({ length: 8 }, () => ({
+    shape: "block", size: [40, 40, 40], pos: [0, 20, 0], color: "slate",
+  }));
+  assert.throws(() => assertConstitution(decision({ parts: wall }), emptyState), /total volume/);
+  assert.doesNotThrow(() => assertConstitution(decision({ parts: legalParts }), emptyState));
+});
+
+test("an assembly is not a hesitation", () => {
+  assert.throws(
+    () => assertConstitution(decision({ form: "void", params: {}, parts: legalParts }), emptyState),
+    /form is void/,
+  );
+});
+
 // ---------------------------------------------------------------- signatures
 
 test("signing binds the signature to the hash and nothing else", () => {

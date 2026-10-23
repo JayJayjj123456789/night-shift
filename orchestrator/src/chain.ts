@@ -32,7 +32,9 @@ export function verifyChain(works: Work[]): ChainResult {
   let prev = "genesis";
 
   for (const w of ordered) {
-    const expected = computeHash(w.night, w.title, w.form, w.site.x, w.site.z, w.journal, prev);
+    const expected = computeHash(
+      w.night, w.title, w.form, w.site.x, w.site.z, w.journal, prev, w.parts,
+    );
     if (expected !== w.hash) {
       breaks.push({ id: w.id, kind: "hash", expected, got: w.hash });
     } else if (w.prevHash !== prev) {

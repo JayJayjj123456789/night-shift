@@ -2,6 +2,7 @@ import { Decision } from "./schema";
 import type { State, Decision as DecisionT } from "./schema";
 import { getEntry, getNight } from "./datastore";
 import { LEXICON } from "./lexicon";
+import { PALETTE, MATERIALS, PARTS_BUDGET } from "./schema";
 
 const BUDGET = {
   maxInputTokens: 4000,
@@ -268,6 +269,30 @@ ${paramSpec}
 ${formBlock}
 ${lastForm ? `The previous work was form "${lastForm}", so you may NOT use form "${lastForm}" tonight. Pick a different form.` : ""}
 ${telemetry.length ? "There IS attention data, so you should NOT return void. Build a real work." : "There is no attention data yet, so you may return void if you truly have nothing."}
+
+ASSEMBLING (optional)
+You may also compose the work yourself instead of picking one of the six forms.
+Add a "parts" array of up to ${PARTS_BUDGET} parts. Each part is:
+
+{
+  "shape": "block" | "cylinder" | "sphere" | "wedge" | "cone" | "torus" | "plate",
+  "size":  [width, height, depth] in studs,
+  "pos":   [x, y, z] — offset from the site, y is the part's CENTRE height,
+  "rot":   [x, y, z] degrees, optional,
+  "color": ${PALETTE.join(" | ")},
+  "material": ${MATERIALS.join(" | ")},
+  "emissive": 0 to 2 (0 = ordinary, above 1 = a light),
+  "spin": degrees per second, -60 to 60, optional,
+  "float": bob amplitude in studs, 0 to 6, optional
+}
+
+Limits, enforced: at most ${PARTS_BUDGET} parts; every part within 64 studs of the
+site; nothing above 90 studs; total volume under 30000 cubic studs.
+
+Use it when one shape cannot hold the idea — a tower with a leaning member and a
+lamp, a ring that turns, a plinth under a slab. Do not use it to dump a pile of
+boxes; fewer parts, better placed, reads stronger. If a form already fits, leave
+"parts" out entirely.
 
 Do not build the same thing twice. Vary the form, the title and the location from
 every work that already exists. Read the list above and choose something new.

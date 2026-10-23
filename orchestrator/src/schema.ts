@@ -12,6 +12,63 @@ export const Form = z.enum([
   "monolith", "garden", "machine", "text", "light", "void",
 ]);
 
+// ---------------------------------------------------------------------------
+// Part schema — what the LLM may compose a work out of
+//
+// A work used to be one of six templates plus a handful of bounded numbers, so
+// every night looked like one primitive. `parts` lets it compose instead, under
+// a budget small enough that it cannot turn into a pile of blocks: the
+// constraint set is the taste, not the geometry.
+// ---------------------------------------------------------------------------
+
+/** Hard ceiling on parts in one work. Small on purpose. */
+export const PARTS_BUDGET = 8;
+
+/** The only colours a work may use. Six plus two neutrals. */
+export const PALETTE = [
+  "ink", "slate", "bone", "rust", "amber", "jade", "sky", "violet",
+] as const;
+
+export const MATERIALS = ["neon", "glass", "stone", "metal"] as const;
+
+export const SHAPES = [
+  "block", "cylinder", "sphere", "wedge", "cone", "torus", "plate",
+] as const;
+
+export const Part = z.object({
+  shape: z.enum(SHAPES),
+  /** [width, height, depth] in studs; sphere/cylinder/cone read width as diameter. */
+  size: z.tuple([
+    z.number().min(0.2).max(64),
+    z.number().min(0.2).max(90),
+    z.number().min(0.2).max(64),
+  ]),
+  /** Offset from the work's site, in studs. y is the part's CENTRE height. */
+  pos: z.tuple([
+    z.number().min(-64).max(64),
+    z.number().min(0).max(90),
+    z.number().min(-64).max(64),
+  ]),
+  /** Euler degrees, applied XYZ. */
+  rot: z
+    .tuple([
+      z.number().min(-180).max(180),
+      z.number().min(-180).max(180),
+      z.number().min(-180).max(180),
+    ])
+    .optional(),
+  color: z.enum(PALETTE),
+  material: z.enum(MATERIALS).optional(),
+  /** 0 = ordinary, > 1 = a light source. */
+  emissive: z.number().min(0).max(2).optional(),
+  /** Rotation speed in degrees per second; negative spins the other way. */
+  spin: z.number().min(-60).max(60).optional(),
+  /** Vertical bob amplitude in studs. */
+  float: z.number().min(0).max(6).optional(),
+});
+
+export type Part = z.infer<typeof Part>;
+
 export const Decision = z.object({
   title: z.string().min(1).max(40),
   intent: z.string().min(1).max(200),
@@ -21,6 +78,13 @@ export const Decision = z.object({
     z: z.number().int().min(-256).max(256),
   }),
   params: z.record(z.string(), z.number().min(0).max(1)),
+  /**
+   * Optional assembly. When present it replaces the single-primitive
+   * interpretation of `form` with an explicit part list — the LLM stops picking
+   * a template and starts composing. Absent on every work built before this
+   * schema existed, which is also how the hash stays compatible.
+   */
+  parts: z.array(Part).max(PARTS_BUDGET).optional(),
   journal: z.string().min(1).max(280),
   risk: z.enum(["low", "medium"]),
 }).strict();
@@ -54,6 +118,8 @@ export type Work = {
   form: Decision["form"];
   site: { x: number; z: number };
   params: Record<string, number>;
+  /** Assembly, when the work was composed rather than templated. */
+  parts?: Part[];
   seed: number;
   journal: string;         // <= 280 chars
   prevHash: string;

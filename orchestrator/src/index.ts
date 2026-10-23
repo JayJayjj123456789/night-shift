@@ -189,7 +189,9 @@ export async function runNight(): Promise<void> {
     if (!suffix) throw new Error(`too many works for night ${getNight()}`);
     const workId = `n${getNight()}-${suffix}`;
 
-    const hash = computeHash(getNight(), d.title, d.form, d.site.x, d.site.z, d.journal, prevHash);
+    const hash = computeHash(
+      getNight(), d.title, d.form, d.site.x, d.site.z, d.journal, prevHash, d.parts,
+    );
 
     const work: Work = {
       ...d,

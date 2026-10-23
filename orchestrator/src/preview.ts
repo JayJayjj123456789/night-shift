@@ -1,6 +1,6 @@
 // Renders a small SVG preview for a work. Each form has a distinct silhouette
 // so the public journal reads as a timeline of objects, not just dots.
-import type { Work } from "./schema";
+import type { Part, Work } from "./schema";
 
 const FORM_COLOR: Record<string, string> = {
   monolith: "#e8e8e8",
@@ -11,9 +11,73 @@ const FORM_COLOR: Record<string, string> = {
   void: "#6b7280",
 };
 
+/** Matches the palette in schema.ts — the only colours a work may use. */
+const PART_COLOR: Record<string, string> = {
+  ink: "#0b1220",
+  slate: "#334155",
+  bone: "#d6cbb8",
+  rust: "#9a4b2b",
+  amber: "#e0a33a",
+  jade: "#3f9e7a",
+  sky: "#5aa9e6",
+  violet: "#8b6bd9",
+};
+
+function partSize(p: Part): { w: number; h: number; d: number } {
+  // block/plate/wedge use all three; round shapes read width as diameter
+  switch (p.shape) {
+    case "plate":
+    case "block":
+    case "wedge": return { w: p.size[0], h: p.size[1], d: p.size[2] };
+    case "torus": return { w: p.size[0] * 2, h: p.size[1], d: p.size[0] * 2 };
+    default: return { w: p.size[0], h: p.size[0], d: p.size[0] };
+  }
+}
+
+/**
+ * Side-view silhouette of an assembly, in the same visual language as the
+ * form-based previews: every part stands up from its own ground mark.
+ */
+function renderParts(cx: number, cy: number, parts: Part[]): string {
+  const sorted = [...parts].sort((a, b) => partSize(b).h - partSize(a).h);
+  return sorted
+    .map((p) => {
+      const { w, h } = partSize(p);
+      const x = cx + p.pos[0];
+      const groundY = cy + p.pos[2];
+      const color = PART_COLOR[p.color] ?? "#e8e8e8";
+      const glow = (p.emissive ?? 0) > 0.5;
+      const top = groundY - p.pos[1] - h;
+      let shape = "";
+      if (p.shape === "cylinder" || p.shape === "sphere" || p.shape === "cone") {
+        shape = `<circle cx="${x.toFixed(1)}" cy="${(top + h / 2).toFixed(1)}" r="${(w / 2).toFixed(1)}" fill="${color}"/>`;
+      } else if (p.shape === "torus") {
+        shape =
+          `<circle cx="${x.toFixed(1)}" cy="${(top + h / 2).toFixed(1)}" r="${(w / 2).toFixed(1)}" fill="none" stroke="${color}" stroke-width="${Math.max(1.5, h).toFixed(1)}"/>`;
+      } else {
+        shape = `<rect x="${(x - w / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="${color}"/>`;
+      }
+      return (
+        `<circle cx="${x.toFixed(1)}" cy="${groundY.toFixed(1)}" r="1.2" fill="${color}" opacity="0.5"/>` +
+        shape +
+        (glow ? `<circle cx="${x.toFixed(1)}" cy="${top.toFixed(1)}" r="3" fill="#fff" opacity="0.85"/>` : "")
+      );
+    })
+    .join("");
+}
+
 export function renderPreview(w: Work): string {
   const cx = 256 + w.site.x;
   const cy = 256 + w.site.z;
+
+  if (w.parts && w.parts.length) {
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <rect width="512" height="512" fill="#111"/>
+    ${renderParts(cx, cy, w.parts)}
+    <text x="8" y="500" fill="#888" font-size="10">${w.id} · ${w.title}</text>
+  </svg>`;
+  }
+
   const c = FORM_COLOR[w.form] ?? "#e8e8e8";
   const p = w.params ?? {};
 
