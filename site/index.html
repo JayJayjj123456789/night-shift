@@ -26,30 +26,10 @@
 </p>
 <div id="log">กำลังโหลด…</div>
 
+<script src="chain.js"></script>
 <script>
-async function sha256Hex(str) {
-  const buf = new TextEncoder().encode(str);
-  const hash = await crypto.subtle.digest("SHA-256", buf);
-  return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function verifyChain(entries) {
-  let prev = "genesis";
-  for (const e of entries) {
-    // parts are hashed only when the work has them, so entries published before
-    // the parts schema keep the exact hash they were signed with
-    const base = [e.night, e.title, e.form, e.site.x, e.site.z, e.journal, prev];
-    if (e.parts !== undefined && e.parts !== null) base.push(e.parts);
-    const payload = JSON.stringify(base);
-    const full = await sha256Hex(payload);
-    const expected = full.slice(0, 16);
-    if (expected !== e.hash) {
-      return { ok: false, brokenAt: e.id, expected, got: e.hash };
-    }
-    prev = e.hash;
-  }
-  return { ok: true };
-}
+// the hash walk lives in chain.js — one copy for every page
+const { sha256Hex, verifyChain } = window.nsChain;
 
 (async () => {
   const el = document.getElementById("log");

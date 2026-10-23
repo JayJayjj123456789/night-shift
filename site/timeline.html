@@ -82,6 +82,7 @@
 </div>
 <div class="tooltip" id="tooltip"></div>
 
+<script src="chain.js"></script>
 <script>
 const FORM_COLOR = {
   monolith: '#a78bfa',
@@ -98,22 +99,9 @@ const SRC = new URLSearchParams(location.search).get('src') || 'log.jsonl';
 const PREVIEW_DIR = SRC === 'sim.jsonl' ? 'sim-preview' : 'previews';
 document.title += SRC === 'sim.jsonl' ? ' (SIM 30 nights)' : '';
 
-async function sha256Hex(str) {
-  const buf = new TextEncoder().encode(str);
-  const hash = await crypto.subtle.digest('SHA-256', buf);
-  return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2,'0')).join('');
-}
-
-async function verifyChain(entries) {
-  let prev = 'genesis';
-  for (const e of entries) {
-    const payload = JSON.stringify([e.night, e.title, e.form, e.site.x, e.site.z, e.journal, prev]);
-    const full = await sha256Hex(payload);
-    if (full.slice(0,16) !== e.hash) return { ok:false, brokenAt: e.id, got: e.hash, exp: full.slice(0,16) };
-    prev = e.hash;
-  }
-  return { ok:true };
-}
+// the hash walk lives in chain.js — one copy for every page, so a payload change
+// cannot be applied to one page and forgotten on another
+const { sha256Hex, verifyChain } = window.nsChain;
 
 function fmt(n){ return Number(n).toLocaleString(); }
 

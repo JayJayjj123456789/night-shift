@@ -403,6 +403,22 @@ test("every third work must be an assembly", () => {
   );
 });
 
+test("every page uses the shared hash walk, not its own copy", () => {
+  // the third copy is what broke: index.html learned the parts rule, timeline.html
+  // did not, and on 2026-11-04 the 2D page announced "chain broken at
+  // n20261103-a" while status and the 3D page both said the chain was fine
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const site = path.join(__dirname, "..", "..", "site");
+  for (const page of ["index.html", "timeline.html"]) {
+    const html = fs.readFileSync(path.join(site, page), "utf8");
+    assert.ok(html.includes('src="chain.js"'), `${page} must load chain.js`);
+    assert.ok(!/async function sha256Hex/.test(html), `${page} still defines its own hash walk`);
+  }
+  const chain = fs.readFileSync(path.join(site, "chain.js"), "utf8");
+  assert.ok(/base\.push\(e\.parts\)/.test(chain), "chain.js must append parts when present");
+});
+
 test("an impossible NIGHT degrades instead of throwing", () => {
   // October 32 is not a date; readTelemetry used to throw RangeError and the
   // whole night became a void (run #14, night 20261032)
