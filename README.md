@@ -514,6 +514,39 @@ emissive: 0..2 (เกิน 1 = เป็นแสง)   spin: -60..60 อง�
 
 งานที่ไม่มี `parts` (6 ตัวแรก) render เหมือนเดิมทุกตัว
 
+## Void — ทำไม 7 ใน 15 คืนถึงว่าง
+
+ตอน 2026-11-03 ตัวเลขคือ **7 จาก 15 work เป็น void** และ 4 ตัวนอนทับกันอยู่ที่ (0,0) ตัวเลขนั้นไม่ใช่ปัญหาของโมเดล แต่เป็นปัญหาของ prompt
+
+อ่าน `site/raw/*.json` ทั้ง 15 answer ที่โมเดลเคยตอบ:
+
+| สิ่งที่โมเดลตอบ | จำนวน |
+|---|---|
+| `form: "void"` + `journal: "no action"` | **7 จาก 15** |
+| `journal` มีคำนอก lexicon (`text`, `action`) | 4 |
+| `params` หาย → zod `invalid_type` | 1 |
+| content ว่าง (token หมดก่อนเขียนคำตอบ) | 1 |
+| `NIGHT=20261032` ไม่ใช่วันที่จริง → RangeError | 1 |
+
+สาเหตุใหญ่คือ rule 6 ใน prompt เดิม ซึ่งเขียนว่า *"ถ้าไม่แน่ใจ ให้ตอบ `form: "void"` journal `"void no"`"* — โมเดลทำตาม แต่เขียน `"no action"` ซึ่ง **`action` ไม่อยู่ใน 200 คำ** → โดน reject → ลองใหม่ → โดนอีก จนหมด 3 attempt แล้วคืน void อยู่ดี คือ **ระบบสั่งให้มันหาทางออก แล้วก็ปฏิเสธทางออกนั้นเอง**
+
+### กฎใหม่
+
+1. **`void` ไม่ใช่ decision ของโมเดลอีกต่อไป** — `assertConstitution` reject ทุกครั้งที่ `form: "void"` ไม่ว่าสถานะจะเป็นอะไร void เหลือทางเดียวคือ `hesitate()` ซึ่งเขียนเองตอนที่ *ไม่มีงานเกิดขึ้นจริง* เท่านั้น (enum ยังมี void เพราะ chain มี 7 ตัวและ builder ยังต้องวาดมัน)
+2. **rejection ต้องบอกทางไปต่อ** — `"void is not available"` เดี่ยว ๆ ทำให้โมเดลลอง void อีกครั้งด้วยถ้อยคำใหม่ (เกิดจริง 3 ครั้งในคืน 20261102) ตอนนี้ index.ts ต่อท้ายด้วย site ที่ว่างจริงและชื่อ form ที่ใช้ได้: `Use exactly this site: {"x": -131, "z": -190} and form "monolith".`
+3. **`params` เป็น optional** (default `{}`) — assembly ไม่มีตัวเลขให้ใส่ และการไม่ส่งมาคือเรื่องปกติ ไม่ควรกินคืนหนึ่ง
+4. **`void` ไม่โผล่ในลิสต์ form อีก** — เดิม `freeForms` มี `|| f === "void"` ทำให้บรรทัด "forms available to you" ประกาศ void ว่าเป็นตัวเลือก ในคืนที่โมเดลกำลังหาทางออกพอดี
+5. **`hesitate()` ไม่เขียนที่ (0,0) แล้ว** — `freeSpot()` สแกนวงแหวนออกจาก origin แล้วคืนจุดแรกที่ห่าง ≥ 30 studs (deterministic) void ยังเป็นที่อยู่ ไม่ใช่กองขยะบนจุดเกิด
+6. **assembly night ถูกประกาศใน prompt** ไม่ใช่บังคับเงียบ ๆ หลังโมเดลตอบเสร็จ
+7. **prompt แนบ title ที่ใช้ไปแล้ว** — `ns:state` ไม่เคยเก็บ title มาก่อน (resync เติมให้แล้ว 15 ตัว) "bright night sky" จึงถูกเขียนซ้ำ 3 ครั้งโดยที่โมเดลไม่เคยเห็นว่าตัวเองใช้ไปแล้ว
+8. **`hasAttention` เคยโกหก** — `readTelemetry` คืนแถวให้ทุก work ไม่ว่าจะมีคนดูหรือไม่ ดังนั้น `telemetry.length > 0` เป็นจริงตลอดตั้งแต่คืนที่สอง และ prompt สั่งให้ "respond to attention" ทุกคืนทั้งที่ไม่มีใครเคยเห็นอะไรเลย ตอนนี้ใช้ `some(t => t.near > 0)` และลิสต์เฉพาะงานที่มีคนดูจริง
+
+### เช็คยังไง
+```bash
+cd orchestrator && npm test && npm run status
+```
+`status` มีบรรทัด `voids: N/15 (X%)` และ WARN ถ้าเกิน 25% — ตัวเลขนั้นคือ health metric ของงานชิ้นนี้ ไม่ใช่แค่สถิติ
+
 ## Attestation — ทำไม hash chain อย่างเดียวไม่พอ
 
 hash chain เป็น **self-referential**: ใครแก้ `log.jsonl` แล้วคำนวณ hash ใหม่ทั้งไฟล์ ก็ verify ผ่านหมด เพราะมันแค่ตรวจว่าคณิตศาสตร์ตรงกัน ไม่ได้ตรวจว่า *ใคร* เขียน
@@ -548,11 +581,14 @@ node -e "const{createPublicKey,verify}=require('node:crypto'); ..."   # หร�
 cd orchestrator && npm test      # build แล้วรัน node --test
 ```
 
-14 เคส ไม่มี dependency เพิ่ม (ใช้ `node:test` ในตัว):
+14 เคส ไม่มี dependency เพิ่ม (ใช้ `node:test` ในตัว) — ตอนนี้ **26 เคส**:
 - hash vector จริง 2 ตัวที่อยู่บน chain แล้ว (`53822464967a18dc`, `65de0e2b02056c99`) — ถ้ามันเปลี่ยน hash ที่ประกาศไว้ทั้งหมดก็โกหก
 - สร้าง chain สุ่ม 300 ชุด ต้อง verify ผ่านทุกชุด และแก้ 1 field ต้องไม่ผ่านทุกชุด
 - กฎ constitution: lexicon / param bounds / site collision / repeat form
 - signature round-trip: เซ็นแล้ว verify ผ่าน, แก้ hash 1 ตัวอักษรไม่ผ่าน
+- **prompt ต้องไม่มีทางออกที่ constitution จะ reject** — เช็คว่า `void` ไม่โผล่ใน rule 6 และไม่โผล่ใน form enum ของ schema block (ดูหัวข้อ void ด้านบน)
+- `freeSpot()` ต้องคืนจุดที่ห่างงานเดิม ≥ 30 studs และต้อง deterministic
+- `params` ที่ไม่ส่งมาต้องกลายเป็น `{}` ไม่ใช่ schema error
 
 
 **ปิด laptop แล้ว cron ยังรันไหม → รัน.** `night.yml` วิ่งบน GitHub Actions runner (คลาวด์) ไม่ใช่เครื่อง dj · DataStore = Roblox Cloud · หน้าเว็บ = GitHub Pages · เหลือแค่ secret ใน repo ต้องไม่ถูกลบ — sleep/ปิดเครื่อง/เน็ตหลุดที่บ้าน ไม่กระทบ

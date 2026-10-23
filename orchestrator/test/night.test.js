@@ -300,22 +300,83 @@ test("parts are capped, contained and volume-limited", () => {
 test("an assembly is not a hesitation", () => {
   assert.throws(
     () => assertConstitution(decision({ form: "void", params: {}, parts: legalParts }), emptyState),
-    /form is void/,
+    /void is not available/,
   );
 });
 
-test("void is a refusal once someone has come to look", () => {
-  // 2026-10-29: the model returned a perfectly valid void while telemetry
-  // existed, and the night produced nothing
-  const voidDecision = {
+test("void is not a decision the model may make", () => {
+  // 2026-11-03: 7 of 15 works were voids. Six of them came from the prompt's own
+  // escape hatch — "if you are not sure, return void" — which the lexicon then
+  // rejected for the journal "no action". The hatch is gone; a void now only
+  // exists when hesitate() writes one.
+  const v = {
     title: "void", intent: "x", form: "void", site: { x: 200, z: 200 },
     params: {}, journal: "void no", risk: "low",
   };
-  assert.doesNotThrow(() => assertConstitution(voidDecision, emptyState, false));
+  assert.throws(() => assertConstitution(v, emptyState), /void is not available/);
+  // even a beautifully-formed void is refused
   assert.throws(
-    () => assertConstitution(voidDecision, emptyState, true),
-    /void is not allowed while attention/,
+    () => assertConstitution({ ...v, journal: "stone under moon" }, emptyState),
+    /void is not available/,
   );
+});
+
+test("a hesitation lands on free ground instead of the spawn point", () => {
+  // every void used to be written at (0,0): four of them ended up on one pixel
+  // of the site map and the 3D page drew a pile there
+  const { freeSpot } = require("../dist/constitution.js");
+  const works = [{ site: { x: 0, z: 0 } }, { site: { x: 24, z: 0 } }];
+  const p = freeSpot(works);
+  for (const w of works) {
+    assert.ok(
+      Math.hypot(w.site.x - p.x, w.site.z - p.z) >= 30,
+      `freeSpot returned (${p.x}, ${p.z}) which is too close to (${w.site.x}, ${w.site.z})`,
+    );
+  }
+  // deterministic: the same plot always yields the same place
+  assert.deepStrictEqual(freeSpot(works), p);
+});
+
+test("params is optional, because an assembly has no numbers to give", () => {
+  // 2026-11-01 lost a night to `params: Required` on a good light
+  const { Decision } = require("../dist/schema.js");
+  const d = Decision.parse({
+    title: "stone", intent: "x", form: "light",
+    site: { x: 1, z: 1 }, journal: "stone", risk: "low",
+  });
+  assert.deepStrictEqual(d.params, {});
+});
+
+test("the prompt offers no way out that the constitution will reject", () => {
+  const { buildPrompt } = require("../dist/llm.js");
+  const p = buildPrompt(emptyState, []);
+  assert.ok(!/return form "void"/.test(p), "the escape hatch is still in the prompt");
+  assert.ok(!/you may return void/.test(p), "void is still offered as an option");
+  assert.ok(/is not a form you can return/.test(p), "rule 6 must say it plainly");
+  // and it must not appear in the return schema's form enum either
+  const enumLine = p.match(/"form": "([^"]+)"/);
+  assert.ok(enumLine, "the schema block must declare a form enum");
+  assert.ok(!enumLine[1].includes("void"), `form enum still offers void: ${enumLine[1]}`);
+});
+
+test("an assembly night is announced in the prompt, not only enforced after", () => {
+  const { buildPrompt } = require("../dist/llm.js");
+  const works = Array.from({ length: 12 }, (_, i) => ({
+    id: `n${i}`, site: { x: i * 20 - 120, z: 0 }, form: "light", title: `work ${i}`,
+  }));
+  const p = buildPrompt({ ...emptyState, works }, []);
+  assert.ok(/TONIGHT IS AN ASSEMBLY NIGHT/.test(p));
+});
+
+test("the prompt lists the titles already used", () => {
+  const { buildPrompt } = require("../dist/llm.js");
+  const works = [
+    { id: "n1", site: { x: 0, z: 0 }, form: "light", title: "bright night sky" },
+    { id: "n2", site: { x: 100, z: 0 }, form: "machine", title: "night bright tower" },
+  ];
+  const p = buildPrompt({ ...emptyState, works }, []);
+  assert.ok(p.includes("bright night sky"));
+  assert.ok(p.includes("night bright tower"));
 });
 
 test("every third work must be an assembly", () => {

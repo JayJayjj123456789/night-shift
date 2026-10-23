@@ -11,7 +11,7 @@
 // Usage: npm run resync      (reads .env via env.ts)
 
 import "./env";
-import { getEntry } from "./datastore";
+import { getEntry, putEntry } from "./datastore";
 import { verifyChain } from "./chain";
 import { renderPreview } from "./preview";
 import { publicKeyPem, verifyHash } from "./sign";
@@ -167,6 +167,26 @@ async function main() {
 
   const missing = state.works.length - works.length;
   if (missing) console.warn(`warning: ${missing} work id(s) in ns:state have no ns:work entry`);
+
+  // Backfill the summary titles.
+  //
+  // ns:state only ever stored id/site/form, so the prompt's "titles already used"
+  // block was empty on a plot with fifteen works — and "bright night sky" got
+  // written three times without the model ever being shown that it had. The full
+  // title lives on the Work doc, so this is a copy, not a decision. Idempotent,
+  // and it runs before every night because the workflow resyncs first.
+  const byId = new Map(works.map((w) => [w.id, w]));
+  const untitled = state.works.filter((w) => !w.title && byId.has(w.id));
+  if (untitled.length) {
+    await putEntry("ns:state", {
+      ...state,
+      works: state.works.map((w) => ({
+        ...w,
+        title: w.title ?? byId.get(w.id)?.title ?? "",
+      })),
+    });
+    console.log(`  titles    : filled ${untitled.length} missing title(s) in ns:state`);
+  }
 
   const r = await resync(works, state.journalHead);
 

@@ -3,6 +3,7 @@ import type { State, Decision as DecisionT } from "./schema";
 import { getEntry, getNight } from "./datastore";
 import { LEXICON } from "./lexicon";
 import { PALETTE, MATERIALS, PARTS_BUDGET } from "./schema";
+import { OUTPUT_FORMS, isAssemblyNight } from "./constitution";
 
 const BUDGET = {
   maxInputTokens: 4000,
@@ -17,8 +18,6 @@ const BUDGET = {
   maxUsdPerNight: 0.10,
   maxRetries: 2,
 };
-
-const FORMS = ["monolith", "garden", "machine", "text", "light", "void"] as const;
 
 const LLM_BASE = process.env.LLM_BASE ?? "https://api.groq.com/openai/v1";
 const LLM_MODEL = process.env.LLM_MODEL ?? "openai/gpt-oss-120b";
@@ -120,6 +119,7 @@ function candidateSites(
   state: State,
   rng: () => number,
   count: number,
+  telemetry: Attention[] = [],
 ): { x: number; z: number; hint: string }[] {
   const HALF = 200; // stay well inside the 512x512 plot
   const CLEAR = ASKED_SITE_DISTANCE;
@@ -146,16 +146,25 @@ function candidateSites(
     if (tooClose) continue;
     if (out.some((c) => Math.hypot(c.x - x, c.z - z) < 40)) continue;
 
-    const nearLoved = state.works.some((w) => {
-      const dx = w.site.x - x;
-      const dz = w.site.z - z;
-      return dx * dx + dz * dz < 140 * 140;
-    });
-    out.push({
-      x,
-      z,
-      hint: nearLoved ? "close to a work that was loved" : "open ground",
-    });
+    // The hint has to be true. It used to say "close to a work that was loved"
+    // for any work within 140 studs, whether or not anyone had ever looked at it
+    // — and on 2026-11-03 it said that four times while the attention block two
+    // paragraphs above said nothing on the plot had ever been seen.
+    const nearest = state.works
+      .map((w) => ({ w, d: Math.hypot(w.site.x - x, w.site.z - z) }))
+      .sort((a, b) => a.d - b.d)[0];
+    const verdict = nearest
+      ? telemetry.find((t) => t.workId === nearest.w.id)?.verdict
+      : undefined;
+    const hint =
+      nearest && nearest.d < 140
+        ? verdict === "loved"
+          ? "close to a work that was loved"
+          : verdict === "seen"
+            ? "near a work that was seen"
+            : "near an older work nobody has seen"
+        : "open ground";
+    out.push({ x, z, hint });
   }
   return out;
 }
@@ -181,28 +190,44 @@ export function buildPrompt(state: State, telemetry: Attention[]): string {
     })
     .join("\n");
 
-  // Which works deserve a response, and what kind of response.
-  const attentionLines = telemetry.length
-    ? telemetry
+  // Which works deserve a response, and what kind of response. Only works that
+  // were actually seen are worth listing: fifteen rows of "near=0 -> nobody came
+  // close" is noise, and it buries the one work that mattered.
+  const seen = telemetry.filter((t) => t.near > 0);
+  const attentionLines = seen.length
+    ? seen
         .map((t) => {
           const instruction =
             t.verdict === "loved"
               ? "someone stood and looked at it -> build NEAR it, but at least 30 studs away"
-              : t.verdict === "unseen"
-                ? "nobody came close -> build where it CAN be seen"
-                : "seen in passing -> build somewhere quiet, away from it";
+              : "seen in passing -> build somewhere quiet, away from it";
           return `  ${t.workId}: near=${t.near}, dwell=${t.dwellSeconds}s -> ${t.verdict}. ${instruction}`;
         })
         .join("\n")
-    : "  (no telemetry yet - no one has visited, so build something anyone can find)";
+    : "  (nothing on this plot has ever been seen. Nobody has come close to anything.\n"
+      + "   Build where it can be found from the middle of the plot.)";
 
   const lastForm = state.works.length ? state.works[state.works.length - 1].form : null;
-  const usedForms = [...new Set(state.works.map((w) => w.form))];
-  const freeForms = FORMS.filter((f) => !usedForms.includes(f) || f === "void");
-  const formBlock =
-    usedForms.length > 0
-      ? `Forms already used in this plot: ${usedForms.join(", ")}. Choose a form that is NOT in that list.`
-      : "No form has been used yet.";
+  // void is not an option, so it must never appear in a list of options. It used
+  // to leak in here through the `|| f === "void"` fallback, which told the model
+  // "the forms available are: monolith, garden, machine, text, light, void" on
+  // the exact nights it was looking for a way out.
+  const usedForms = [...new Set(state.works.map((w) => w.form))].filter((f) => f !== "void");
+  const unusedForms = OUTPUT_FORMS.filter((f) => !usedForms.includes(f));
+  const formBlock = !state.works.length
+    ? "No form has been used yet."
+    : unusedForms.length
+      ? `Forms already used in this plot: ${usedForms.join(", ")}. Prefer one that is NOT in that list: ${unusedForms.join(", ")}.`
+      : `Every form has been used at least once. Reuse one, but change its proportions, its parts and its place — a repeat of an earlier work is not a work.`;
+
+  const titlesUsed = state.works.map((w) => w.title).filter((t): t is string => Boolean(t));
+  const assembly = isAssemblyNight(state.works.length);
+  // Real attention means somebody actually came close. readTelemetry returns one
+  // row per work whether or not anyone visited, so `telemetry.length > 0` was
+  // true from the second night onward and the prompt told the model "there IS
+  // attention data" every single night, including nights when nothing had ever
+  // been seen.
+  const hasAttention = telemetry.some((t) => t.near > 0);
 
   const paramSpec = [
     "monolith: height 0.2-1, width 0.1-0.6, glow 0-1, hue 0-1",
@@ -210,7 +235,6 @@ export function buildPrompt(state: State, telemetry: Attention[]): string {
     "machine: parts 0.2-1, speed 0.1-1, glow 0-1",
     "text: size 0.2-1, depth 0.1-1, hue 0-1",
     "light: height 0.2-1, intensity 0.1-1, hue 0-1",
-    "void: no parameters at all (params must be an empty object)",
   ].join("\n");
 
   const words = [...LEXICON].sort().join(", ");
@@ -226,7 +250,7 @@ export function buildPrompt(state: State, telemetry: Attention[]): string {
 
   // A few candidate sites, already clear of the existing works, so the model
   // picks one instead of inventing coordinates that land on top of something.
-  const candidates = candidateSites(state, rng, 6);
+  const candidates = candidateSites(state, rng, 6, telemetry);
   const candidateBlock = candidates
     .map((c) => `  (${c.x}, ${c.z})   ${c.hint}`)
     .join("\n");
@@ -262,9 +286,11 @@ HARD RULES
 4. Must sit inside the 512x512 plot.
 5. You may ONLY use the words listed below, in title and journal. No other English
    word is allowed in those two fields. "intent" is the only free-text field.
-6. If you are not sure, return form "void" with journal "void no" and title "void".
-   Those three words are in the list above; "no action" is not, and writing it gets
-   the whole night rejected.
+6. There is no empty answer. "void" is not a form you can return — it is reserved
+   for a night where nothing could be made at all, and that is not tonight. If you
+   cannot decide, take the first free site above and build the smallest honest
+   thing you can defend: one form, a few numbers, a title of two or three words.
+   A small work is still a work.
 7. You may not speak or chat. Only the journal.
 
 THE ONLY WORDS YOU MAY USE IN title AND journal
@@ -280,10 +306,11 @@ FORMS AND THEIR PARAMETERS
 ${paramSpec}
 ${formBlock}
 ${lastForm ? `The previous work was form "${lastForm}", so you may NOT use form "${lastForm}" tonight. Pick a different form.` : ""}
-${telemetry.length ? "There IS attention data, so you should NOT return void. Build a real work." : "There is no attention data yet, so you may return void if you truly have nothing."}
+${hasAttention ? "Someone has stood in front of something you made. Answer it." : "Nothing here has ever been seen. That is not permission to do nothing — it is the reason to build something loud enough to find."}
+${assembly ? `\nTONIGHT IS AN ASSEMBLY NIGHT. This is work ${state.works.length + 1} on the plot and every third one must be composed from "parts" — 2 to ${PARTS_BUDGET} of them. A single form with no parts will be rejected.` : ""}
 
 ASSEMBLING
-Most nights compose the work yourself instead of picking one of the six forms: a
+Most nights compose the work yourself instead of picking one of the forms: a
 "parts" array of 2 to ${PARTS_BUDGET} parts. Each part:
   shape: block | cylinder | sphere | wedge | cone | torus | plate
   size:  [width, height, depth] studs — round shapes read width as diameter
@@ -299,21 +326,25 @@ Build parts when the idea has more than one thing in it. Two or three well-place
 parts beat eight. A single shape is allowed only when the idea really is one thing.
 Never dump a pile of boxes, and never send "parts" with a single entry.
 
+TITLES ALREADY USED ON THIS PLOT
+${titlesUsed.length ? titlesUsed.map((t) => `  ${t}`).join("\n") : "  (none)"}
+A title you have used before, or one that only swaps a word for its neighbour, is
+not a new work. "bright night sky" three times is one work written three times.
+
 The title names the thing, not the action: "bright night sky", not "build near
 light".
 
 Do not build the same thing twice. Vary the form, the title and the location from
 every work that already exists. Read the list above and choose something new.
-The forms still available to you are: ${freeForms.filter((f) => f !== "void").join(", ") || FORMS.join(", ")}.
 
 Return ONLY the raw JSON object - no markdown code fence, no explanation, no text
 before or after. Matching this schema:
 {
   "title": "string, 1-40 chars, only the words listed above, space separated",
   "intent": "string, 1-200 chars, any words you like, never shown in the game",
-  "form": "${FORMS.join(" | ")}",
+  "form": "${OUTPUT_FORMS.join(" | ")}",
   "site": { "x": integer -256..256, "z": integer -256..256 },
-  "params": { "<one of the parameters listed above>": number 0..1 },
+  "params": { "<one of the parameters listed above>": number 0..1 } — send {} when you assemble with parts,
   "parts": [ { "shape": "...", "size": [w,h,d], "pos": [x,y,z], "rot": [x,y,z] optional, "color": "...", "material": "..." optional, "emissive": number optional, "spin": number optional, "float": number optional } ],
   "journal": "string, 1-280 chars, only the words listed above",
   "risk": "low" | "medium"

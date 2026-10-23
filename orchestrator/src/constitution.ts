@@ -53,6 +53,48 @@ function assertParts(parts: Part[]): void {
 /** How often an assembly is compulsory. One work in three. */
 export const ASSEMBLY_EVERY = 3;
 
+/**
+ * The forms the model may actually return. `void` is in the enum because the
+ * chain holds them and the builder still draws them, but it is not an answer —
+ * see the rule in assertConstitution.
+ */
+export const OUTPUT_FORMS = [
+  "monolith", "garden", "machine", "text", "light",
+] as const;
+
+/**
+ * The first point at least `minDist` from every existing work, scanning outward
+ * from the origin in rings. Deterministic, so a re-run of a night lands in the
+ * same place, and it never returns null on a 512x512 plot with sane occupancy.
+ *
+ * It exists because hesitate() used to write every void at (0,0): four works
+ * ended up stacked on the spawn point, and the site map showed it as four dots
+ * in one pixel.
+ */
+export function freeSpot(
+  works: { site: { x: number; z: number } }[],
+  minDist = MIN_SITE_DISTANCE,
+): { x: number; z: number } {
+  const clear = (x: number, z: number) =>
+    works.every((w) => {
+      const dx = w.site.x - x;
+      const dz = w.site.z - z;
+      return dx * dx + dz * dz >= minDist * minDist;
+    });
+
+  for (let r = 0; r <= 240; r += 24) {
+    const steps = r === 0 ? 1 : 24;
+    for (let k = 0; k < steps; k++) {
+      const a = (k / steps) * Math.PI * 2;
+      const x = Math.round(Math.cos(a) * r);
+      const z = Math.round(Math.sin(a) * r);
+      if (clear(x, z)) return { x, z };
+    }
+  }
+  // the plot is full — nothing is free, and the caller has to know
+  throw new Error("no free site left on the plot");
+}
+
 /** True when the work about to be built must be an assembly. */
 export function isAssemblyNight(worksSoFar: number): boolean {
   return worksSoFar > 0 && worksSoFar % ASSEMBLY_EVERY === 0;
@@ -63,12 +105,7 @@ function findViolations(text: string): string[] {
   return words.filter((w) => !LEXICON.has(w));
 }
 
-export function assertConstitution(
-  d: Decision,
-  state: State,
-  hasAttention = false,
-  night = 0,
-): void {
+export function assertConstitution(d: Decision, state: State): void {
   const titleBad = findViolations(d.title);
   const journalBad = findViolations(d.journal);
   if (titleBad.length || journalBad.length) {
@@ -77,12 +114,23 @@ export function assertConstitution(
     );
   }
 
-  // A void is the honest answer when nobody has ever come to look. With attention
-  // data on the table it is a refusal to answer, and the model used it as one:
-  // on 2026-10-29 it returned a perfectly valid void while telemetry existed and
-  // the night produced nothing. Reject it, so the retry has to respond.
-  if (d.form === "void" && hasAttention) {
-    throw new Error("void is not allowed while attention data exists — respond to it");
+  // `void` is not a decision the model is allowed to make.
+  //
+  // It used to be, and the prompt said so out loud: "if you are not sure, return
+  // form void with journal void no". Then the model started using it as an exit
+  // whenever a rule got tight, and the exit was itself illegal — it wrote
+  // journal "no action", and "action" is not in the 200-word lexicon, so the
+  // night spent three attempts failing the same rule. Seven of the fifteen
+  // answers in site/raw are that one move.
+  //
+  // So: void stays in the enum, because the chain holds seven of them and the
+  // builder still has to draw them. But it is now only reachable through
+  // hesitate() — the path taken when no work could be made at all. The model
+  // has to answer, and a small work is always better than an empty night.
+  if (d.form === "void") {
+    throw new Error(
+      "void is not available — that form is reserved for a night where no work could be made at all",
+    );
   }
 
   // Every third work must be an assembly. Three nights of evidence say asking
@@ -106,10 +154,6 @@ export function assertConstitution(
     if (v < range[0] || v > range[1]) throw new Error(`param ${k}=${v} out of range [${range[0]}, ${range[1]}]`);
   }
 
-  // an assembly is not a hesitation
-  if (d.parts && d.parts.length && d.form === "void") {
-    throw new Error("parts present but form is void — a hesitation has nothing to assemble");
-  }
   if (d.parts) assertParts(d.parts);
 
   if (!isFree(d.site, state.works)) throw new Error("site occupied");

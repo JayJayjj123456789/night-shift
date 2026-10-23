@@ -77,7 +77,13 @@ export const Decision = z.object({
     x: z.number().int().min(-256).max(256),
     z: z.number().int().min(-256).max(256),
   }),
-  params: z.record(z.string(), z.number().min(0).max(1)),
+  /**
+   * Defaulted, not required. An assembly has no numbers to put here and the
+   * model simply omits the key — 2026-11-01 lost a night to
+   * `params: Required` on a perfectly good light, and the raw archive shows the
+   * rejection as a wall of Zod JSON that told the model nothing.
+   */
+  params: z.record(z.string(), z.number().min(0).max(1)).default({}),
   /**
    * Optional assembly. When present it replaces the single-primitive
    * interpretation of `form` with an explicit part list — the LLM stops picking
@@ -132,6 +138,12 @@ export type Work = {
 export type State = {
   night: number;
   journalHead: string;
-  works: { id: string; site: { x: number; z: number }; form: Decision["form"] }[];
+  /**
+   * `title` is optional because the entries written before 2026-11-03 do not
+   * carry one. The prompt needs the titles to tell the model what it has already
+   * named — "bright night sky" appeared three times in a row and the model had no
+   * way to see that.
+   */
+  works: { id: string; site: { x: number; z: number }; form: Decision["form"]; title?: string }[];
   plot: { size: number };
 };

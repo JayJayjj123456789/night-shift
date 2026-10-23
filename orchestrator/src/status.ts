@@ -124,18 +124,20 @@ async function main() {
     info(`${w.id} at (${w.site.x}, ${w.site.z}) — ${d.toFixed(1)} studs from origin`);
   }
   const lastWork = workDocs[workDocs.length - 1];
-  if (lastWork) {
-    if (lastWork.form === "void") {
-      warn(`last form was "void" — constitution forbids repeating it, so tonight the LLM must pick a real form`);
-    }
-    const voids = state.works.filter((w) => w.form === "void");
-    if (voids.length) {
-      const atOrigin = voids.some((w) => w.site.x === 0 && w.site.z === 0);
-      if (atOrigin) {
-        warn("a void work sits at (0,0) and still occupies the site — the next LLM must pick a spot >30 studs away");
-      }
-    }
+  if (lastWork && lastWork.form === "void") {
+    warn(`last form was "void" — the shift produced nothing last night; tonight has to answer`);
   }
+
+  // A void is a failure marker, not a style. The count is the health metric that
+  // matters: on 2026-11-03 it was 7 of 15, all of them nights where the model
+  // took the escape hatch the prompt offered it and got rejected for it.
+  const voids = workDocs.filter((w) => w.form === "void");
+  const voidPct = workDocs.length ? voids.length / workDocs.length : 0;
+  info(`voids: ${voids.length}/${workDocs.length} (${Math.round(voidPct * 100)}%)`);
+  if (voidPct > 0.25) {
+    warn(`more than a quarter of the plot is empty nights — read site/raw/*.json for the rejection that caused them`);
+  }
+
   const freeNear = !state.works.some((w) => Math.hypot(w.site.x, w.site.z) < MIN_SITE_DISTANCE);
   if (freeNear) ok(true, `origin (0,0) is free — a work may be placed there`);
 

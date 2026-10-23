@@ -4,7 +4,7 @@ import { Decision } from "./schema";
 import type { State, Work } from "./schema";
 import { getEntry, putEntry, publish, getNight } from "./datastore";
 import { computeHash } from "./hash";
-import { assertConstitution } from "./constitution";
+import { assertConstitution, freeSpot, OUTPUT_FORMS } from "./constitution";
 import { askLLM, readTelemetry } from "./llm";
 import { renderPreview } from "./preview";
 import { signHash, writePublicKey } from "./sign";
@@ -26,14 +26,23 @@ async function hesitate(state: State, reason: string, attempts: RawAttempt[] = [
   );
   if (!suffix) throw new Error(`too many works for night ${getNight()}`);
   const workId = `n${getNight()}-${suffix}`;
-  const hash = computeHash(getNight(), "void", "void", 0, 0, journal, prevHash);
+  // Not (0,0) any more. Every hesitation used to land on the spawn point, so
+  // four of the seven voids on the chain sit on one pixel of the site map and
+  // the 3D page draws a pile there. A void is still a place.
+  let site = { x: 0, z: 0 };
+  try {
+    site = freeSpot(state.works);
+  } catch {
+    // plot full: fall back to the origin, which is at least a known position
+  }
+  const hash = computeHash(getNight(), "void", "void", site.x, site.z, journal, prevHash);
   const work: Work = {
     id: workId,
     night: getNight(),
     title: "void",
     intent: reason,
     form: "void",
-    site: { x: 0, z: 0 },
+    site,
     params: {},
     seed: getNight(),
     journal,
@@ -47,7 +56,7 @@ async function hesitate(state: State, reason: string, attempts: RawAttempt[] = [
     ...state,
     night: getNight(),
     journalHead: hash,
-    works: [...state.works, { id: work.id, site: work.site, form: work.form }],
+    works: [...state.works, { id: work.id, site: work.site, form: work.form, title: work.title }],
   });
   await publish("nightshift", { type: "new_work", id: work.id });
   await publishWork(work);
@@ -155,6 +164,28 @@ function describeRejection(e: unknown): string {
   }
 }
 
+/**
+ * A rejection is only useful if it says what to do instead. "void is not
+ * available" on its own just makes the model try void again in different words —
+ * which is precisely what happened three times on 2026-11-02, all three rejected
+ * for the same reason, and the night ended empty. So the rejection carries a
+ * free site and a legal form with it.
+ */
+function voidHint(state: State): string {
+  let spot = { x: 0, z: 0 };
+  try {
+    spot = freeSpot(state.works);
+  } catch {
+    /* plot full — the suggestion below is still better than nothing */
+  }
+  const used = new Set(state.works.map((w) => w.form));
+  const open = OUTPUT_FORMS.filter((f) => !used.has(f));
+  const last = state.works[state.works.length - 1]?.form;
+  const usable = (open.length ? open : OUTPUT_FORMS).filter((f) => f !== last);
+  const form = usable[0] ?? "light";
+  return ` Use exactly this site: {"x": ${spot.x}, "z": ${spot.z}} and form "${form}".`;
+}
+
 export async function runNight(): Promise<void> {
   const state = (await getEntry<State>("ns:state")) ?? {
     night: 0,
@@ -188,10 +219,11 @@ export async function runNight(): Promise<void> {
       });
       try {
         const parsed = Decision.parse(raw);
-        assertConstitution(parsed, state, telemetry.length > 0);
+        assertConstitution(parsed, state);
         d = parsed;
       } catch (e) {
         rejection = describeRejection(e);
+        if (rejection.includes("void is not available")) rejection += voidHint(state);
         const last = attempts[attempts.length - 1];
         if (last) last.rejection = rejection;
         console.warn(`attempt ${attempt} rejected: ${rejection}`);
@@ -232,7 +264,7 @@ export async function runNight(): Promise<void> {
       ...state,
       night: getNight(),
       journalHead: hash,
-      works: [...state.works, { id: work.id, site: work.site, form: work.form }],
+      works: [...state.works, { id: work.id, site: work.site, form: work.form, title: work.title }],
     });
 
     await publish("nightshift", { type: "new_work", id: work.id, site: work.site, form: work.form });
