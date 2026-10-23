@@ -1,1 +1,1 @@
-
+{"title":"bright night tower","intent":"Construct a monolith at the open ground coordinate to be visible from the center of the plot during night shift.","form":"monolith","site":{"x":-191,"z":-141},"params":{"height":0.5,"width":0.3,"glow":0.2,"hue":0.6},"parts":[],"journal":"bright night tower near sky","risk":"low","id":"n20261024-a","night":20261024,"seed":20261024,"prevHash":"genesis","hash":"79f9933f66b06eb3","sig":"8TNRV2SDtsCqyoN69Gkuq+y2BWBLoUVNucnTpAWiXMtJCEM3bbHt9QfSY3FJ4t73dgC7Ey86k4RVIAj9MIXRDQ==","builderVersion":1}
