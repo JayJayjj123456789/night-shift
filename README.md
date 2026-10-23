@@ -468,7 +468,7 @@ jobs:
 > เจอแล้ว: `${{ secrets.X }}` ใน workflow ถ้าไปโผล่ในโค้ดที่ commit ผ่าน tool ที่ censor จะกลายเป็น `***` → YAML parse error. แก้ด้วย: สร้าง workflow ผ่าน GitHub web editor (หรือเขียนไฟล์ผ่าน execute_code ที่ไม่โดน censor)
 
 
-## หน้าเว็บ (`site/`) — 4 หน้า
+## หน้าเว็บ (`site/`) — 4 หน้า + ไฟล์ที่ derive จาก DataStore
 
 | ไฟล์ | ทำอะไร |
 |---|---|
@@ -476,8 +476,56 @@ jobs:
 | `timeline.html` | แผนผัง 512×512 (วงกลม = ชิ้นงาน) + กราฟ near/dwell + ตารางทุกคืน |
 | `timeline3d.html` | **plot 3 มิติ** — Three.js + OrbitControls, ลากหมุน/ซูม, hover อ่านบันทึก · `?src=sim.jsonl` = ชุดจำลอง 30 คืน |
 | `architecture.html` | แผนผังระบบทั้งหมด (SVG) |
+| `log.jsonl` | ทุกชิ้นงาน เรียงตามคืน — derive จาก `ns:state` + `ns:work:*` |
+| `previews/{id}.svg` | ภาพ silhouette ต่อ form — derive จาก work |
+| `raw/{id}.json` | **บทสนทนากับโมเดลทั้งรอบ** (prompt + ทุกคำตอบ + เหตุผลที่ถูกปฏิเสธ) — เก็บใน `ns:raw:{id}` ด้วย |
+| `telemetry.jsonl` | near/dwell 7 วันล่าสุดที่ aggregate แล้ว — กราฟใน `timeline.html` ใช้ไฟล์นี้ |
+| `pubkey.pem` | public key สำหรับตรวจ signature ของแต่ละชิ้น |
 
 **3D อ่านยังไง:** แกน X/Z = `site.x`, `site.z` ในแปลงจริง 512×512 · แกน Y = `params.height` ของชิ้นนั้น (สเกลเร่ง ×24 เพราะของจริงเตี้ย 0.3–1.5 stud เทียบพื้น 512 — ถ้าไม่เร่งจะแบนติดพื้นจนมองไม่เห็น) · สี/รูปทรง = form (monolith=แท่ง, garden=ทรงกระบอกเตี้ย, machine=เหลี่ยม 6, text=แผ่นบาง, light=เสาไฟมีดวง, void=ลูกกลม)
+
+---
+
+## Attestation — ทำไม hash chain อย่างเดียวไม่พอ
+
+hash chain เป็น **self-referential**: ใครแก้ `log.jsonl` แล้วคำนวณ hash ใหม่ทั้งไฟล์ ก็ verify ผ่านหมด เพราะมันแค่ตรวจว่าคณิตศาสตร์ตรงกัน ไม่ได้ตรวจว่า *ใคร* เขียน
+
+แต่ละ work เลยมี `sig` — Ed25519 signature ทับค่า `hash` ของตัวเอง กุญแจส่วนตัวอยู่ใน GitHub Secrets ไม่เคยออกจาก CI ส่วน public key อยู่ที่ `site/pubkey.pem` ให้ใครก็ตรวจได้
+
+```
+node -e "const{createPublicKey,verify}=require('node:crypto'); ..."   # หรือดูใน status.js
+```
+
+- **ไม่มี key = ไม่มี signature และไม่มีอะไรพัง** — signing เป็น optional โดยตั้งใจ คืนห้ามตายเพราะ attestation
+- ตั้งค่า: `NS_SIGNING_KEY` = base64 ของ PKCS8 PEM (สร้างด้วย `node -e` ที่ให้มาใน PR) · ไฟล์ `ns-signing-key.b64`
+- `npm run status` รายงาน `N/N works signed with Ed25519 and verified`
+- `npm run resync` exit **3** ถ้า signature ไม่ตรง (= entry ถูกแก้หลังเซ็น) แยกจาก exit 2 ที่ chain พัง
+
+## ยังค้าง — workflow v3 (ไฟล์พร้อมแปะที่ `~/Downloads/night.yml`)
+
+โค้ดทุกอย่างในหัวข้อบนทำงานได้แล้ว แต่ workflow ที่รันอยู่จริงยังเป็น v2 ซึ่ง **ไม่รู้จักไฟล์ใหม่** สิ่งที่ v3 เพิ่ม:
+
+| เพิ่ม | เพราะ |
+|---|---|
+| step `Lint workflows` (actionlint 1.7.12) | บั๊กที่กินไป 2 คืนเป็น workflow defect ทั้งคู่ — ตรวจก่อนรัน |
+| step `Test` (`node --test`) | 14 เคส ก่อนใช้ runner สร้างงานจริง |
+| `NS_SIGNING_KEY` ใน env ของ `Run night` | ถ้าไม่มี signature ก็ไม่เกิด |
+| `file_pattern` เพิ่ม `site/raw/*.json site/telemetry.jsonl site/pubkey.pem` | ไฟล์ที่ runner เขียนแล้วไม่ถูก commit = หาย |
+
+> ไม่แปะก็ไม่พัง — raw/telemetry ยังถูกกู้จาก DataStore ด้วย `npm run resync` และ signature แค่ไม่มีคนเซ็น แต่จะเสีย lint/test ใน CI กับ commit ของไฟล์ใหม่
+
+## Test
+
+```bash
+cd orchestrator && npm test      # build แล้วรัน node --test
+```
+
+14 เคส ไม่มี dependency เพิ่ม (ใช้ `node:test` ในตัว):
+- hash vector จริง 2 ตัวที่อยู่บน chain แล้ว (`53822464967a18dc`, `65de0e2b02056c99`) — ถ้ามันเปลี่ยน hash ที่ประกาศไว้ทั้งหมดก็โกหก
+- สร้าง chain สุ่ม 300 ชุด ต้อง verify ผ่านทุกชุด และแก้ 1 field ต้องไม่ผ่านทุกชุด
+- กฎ constitution: lexicon / param bounds / site collision / repeat form
+- signature round-trip: เซ็นแล้ว verify ผ่าน, แก้ hash 1 ตัวอักษรไม่ผ่าน
+
 
 **ปิด laptop แล้ว cron ยังรันไหม → รัน.** `night.yml` วิ่งบน GitHub Actions runner (คลาวด์) ไม่ใช่เครื่อง dj · DataStore = Roblox Cloud · หน้าเว็บ = GitHub Pages · เหลือแค่ secret ใน repo ต้องไม่ถูกลบ — sleep/ปิดเครื่อง/เน็ตหลุดที่บ้าน ไม่กระทบ
 

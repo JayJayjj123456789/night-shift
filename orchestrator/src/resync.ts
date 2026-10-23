@@ -12,8 +12,9 @@
 
 import "./env";
 import { getEntry } from "./datastore";
-import { computeHash } from "./hash";
+import { verifyChain } from "./chain";
 import { renderPreview } from "./preview";
+import { publicKeyPem, verifyHash } from "./sign";
 import type { State, Work } from "./schema";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -30,6 +31,10 @@ export type ResyncReport = {
   dropped: string[];
   previews: number;
   breaks: string[];
+  signed: number;
+  badSigs: string[];
+  telemetryRows: number;
+  raw: number;
 };
 
 async function readExisting(): Promise<Work[]> {
@@ -42,18 +47,70 @@ async function readExisting(): Promise<Work[]> {
     .map((l) => JSON.parse(l) as Work);
 }
 
+/**
+ * Attention data lives only in the DataStore, so the timeline's near/dwell chart
+ * has always rendered its "no telemetry.jsonl published yet" branch. Aggregate
+ * the same 7-day window the prompt sees and publish it as a derived file.
+ */
+export async function exportTelemetry(latestNight: number): Promise<number> {
+  if (!latestNight) return 0;
+  const iso = String(latestNight).replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3");
+  const base = new Date(`${iso}T00:00:00Z`);
+  const totals: Record<string, { near: number; dwell: number }> = {};
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(base);
+    d.setUTCDate(d.getUTCDate() - i);
+    const day = d.toISOString().slice(0, 10);
+    const t = await getEntry<Record<string, { near: number; dwell: number }>>(`ns:telemetry:${day}`);
+    if (!t) continue;
+    for (const [id, v] of Object.entries(t)) {
+      const a = totals[id] ?? { near: 0, dwell: 0 };
+      a.near += v.near ?? 0;
+      a.dwell += v.dwell ?? 0;
+      totals[id] = a;
+    }
+  }
+
+  const rows = Object.entries(totals)
+    .map(([id, v]) => ({
+      id,
+      near: v.near,
+      dwell: v.dwell,
+      verdict: v.near < 3 ? "unseen" : v.dwell > 120 ? "loved" : "seen",
+    }))
+    .sort((a, b) => b.near - a.near);
+
+  await mkdir(SITE_DIR, { recursive: true });
+  await writeFile(
+    join(SITE_DIR, "telemetry.jsonl"),
+    rows.map((r) => JSON.stringify(r)).join("\n") + (rows.length ? "\n" : ""),
+    "utf8",
+  );
+  return rows.length;
+}
+
 /** Pure-ish core: takes the works as given, writes the derived files, reports. */
 export async function resync(works: Work[], head: string): Promise<ResyncReport> {
-  const sorted = [...works].sort((a, b) => a.night - b.night || (a.id < b.id ? -1 : 1));
-
   // verify while we walk — a rebuild must not paper over a broken chain
-  let prev = "genesis";
-  const breaks: string[] = [];
-  for (const w of sorted) {
-    const expected = computeHash(w.night, w.title, w.form, w.site.x, w.site.z, w.journal, prev);
-    if (expected !== w.hash) breaks.push(`${w.id} hash ${w.hash} != computed ${expected}`);
-    else if (w.prevHash !== prev) breaks.push(`${w.id} prevHash ${w.prevHash} != ${prev}`);
-    prev = w.hash;
+  const chain = verifyChain(works);
+  const sorted = chain.ordered;
+  const breaks = chain.breaks.map(
+    (b) => `${b.id} ${b.kind} ${b.got} != ${b.expected}`,
+  );
+
+  // signatures, when a public key has been published. Unsigned entries are
+  // history from before signing existed — they are not failures. A signature
+  // that does not verify is.
+  const pub = publicKeyPem();
+  const badSigs: string[] = [];
+  let signed = 0;
+  if (pub) {
+    for (const w of sorted) {
+      if (!w.sig) continue;
+      if (verifyHash(w.hash, w.sig, pub)) signed++;
+      else badSigs.push(w.id);
+    }
   }
 
   const before = await readExisting();
@@ -74,7 +131,22 @@ export async function resync(works: Work[], head: string): Promise<ResyncReport>
     }
   }
 
-  return { total: sorted.length, head, added, dropped, previews, breaks };
+  // the model exchange lives in the DataStore as ns:raw:{id}; restore the site
+  // copy when it is missing (a new checkout, or a commit glob that missed it)
+  let raw = 0;
+  for (const w of sorted) {
+    const p = join(SITE_DIR, "raw", `${w.id}.json`);
+    if (existsSync(p)) continue;
+    const rec = await getEntry<unknown>(`ns:raw:${w.id}`);
+    if (!rec) continue;
+    await mkdir(join(SITE_DIR, "raw"), { recursive: true });
+    await writeFile(p, JSON.stringify(rec, null, 2) + "\n", "utf8");
+    raw++;
+  }
+
+  const telemetryRows = await exportTelemetry(sorted.length ? sorted[sorted.length - 1].night : 0);
+
+  return { total: sorted.length, head, added, dropped, previews, breaks, signed, badSigs, telemetryRows, raw };
 }
 
 async function main() {
@@ -98,8 +170,16 @@ async function main() {
   if (r.added.length) console.log(`  added   : ${r.added.join(", ")}`);
   if (r.dropped.length) console.log(`  dropped : ${r.dropped.join(", ")} (in repo but not in DataStore)`);
   if (r.previews) console.log(`  previews: wrote ${r.previews} missing`);
+  if (r.telemetryRows) console.log(`  telemetry: ${r.telemetryRows} work(s) with attention data`);
+  if (r.raw) console.log(`  raw       : restored ${r.raw} model exchange(s)`);
+  if (r.signed) console.log(`  signatures: ${r.signed} verified`);
   if (!r.added.length && !r.dropped.length && !r.previews) console.log("  already in sync");
 
+  if (r.badSigs.length) {
+    console.error(`  SIGNATURE MISMATCH: ${r.badSigs.join(", ")}`);
+    console.error("  the entry was changed after it was signed — this is not a rebuild artefact");
+    process.exit(3);
+  }
   if (r.breaks.length) {
     console.error(`  CHAIN BROKEN at ${r.breaks.length} point(s):`);
     for (const b of r.breaks) console.error(`    ${b}`);
