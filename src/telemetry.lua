@@ -17,6 +17,17 @@ local store = DSS:GetDataStore("NightShift_v1")
 
 local acc = {}       -- [date][workId] = { near, dwell }  this server's running total
 local flushed = {}   -- [date][workId] = { near, dwell }  what this server last wrote
+local ticks = 0      -- loop iterations; 5s each, so 12 is a minute
+
+-- Flush every 12th iteration of the 5-second loop — a minute — counted rather
+-- than read from a clock.
+--
+-- It used to gate on `os.date("!%S") < 6`, a five-second window inside each
+-- minute. That is the original code and it may never have worked: telemetry has
+-- produced data exactly once, on 2026-10-22, and nobody had visited since, so a
+-- flush that never fires is indistinguishable from a plot nobody looks at.
+-- Counting iterations needs no time API at all.
+local FLUSH_EVERY = 12;
 
 local function snapshot(t)
   -- a copy of one day's rows; without it `flushed` would alias the table that
@@ -29,11 +40,10 @@ local function snapshot(t)
 end
 
 local function flush()
-  -- once per minute: os.date("!%M") is minute-of-hour 0..59 so %1 is always true;
-  -- track seconds instead and take the first 5s window of each minute
-  local sec = tonumber(os.date("!%S"))
-  if not sec or sec >= 6 then return end
+  ticks += 1
+  if ticks % FLUSH_EVERY ~= 0 then return end
 
+  local wrote = 0
   for d, works in pairs(acc) do
     if next(works) then
       local prev = flushed[d] or {}
@@ -68,9 +78,18 @@ local function flush()
             return merged
           end)
         end)
+        wrote += 1
       end
     end
   end
+
+  -- A liveness marker, written with SetAsync rather than UpdateAsync because
+  -- SetAsync is the path the builder heartbeat proves works. Without it, "the
+  -- loop never runs" and "the loop runs but the write fails" look identical from
+  -- outside — which is exactly the confusion this whole session has been fixing.
+  pcall(function()
+    store:SetAsync("ns:telemetry:status", { at = os.time(), flushes = ticks, wrote = wrote })
+  end)
 end
 
 task.spawn(function()
