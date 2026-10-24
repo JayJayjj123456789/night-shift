@@ -18,7 +18,7 @@
 -- orchestrator reads that and compares it with this line, and `npm run status`
 -- then says "the place is running v2, the repo has v3" instead of staying green
 -- over a place that was never re-installed.
-local BUILDER_VERSION = 7
+local BUILDER_VERSION = 8
 
 local DSS = game:GetService("DataStoreService")
 local Messaging = game:GetService("MessagingService")
@@ -559,16 +559,31 @@ end)
 -- So every step is now guarded, and the heartbeat carries the count. A plot that
 -- is missing works is a fact the orchestrator can read, not a thing someone has
 -- to notice by walking around in-game.
+--
+-- v7 came back `works: 12, failed: 5` — the guard held, the plot still came up
+-- short. addPart handles every shape in the schema, so those five were not build
+-- failures; they were READS. Seventeen GetAsync calls in a tight loop is exactly
+-- the shape that exhausts Roblox's DataStore request budget, and a throttled read
+-- used to be indistinguishable from a broken work.
+--
+-- So: a small yield between reads, and three attempts with a backoff on each.
 local state = store:GetAsync("ns:state")
 local built, failed = 0, 0
 if state then
   for _, ref in ipairs(state.works or {}) do
-    local okGet, work = pcall(function() return store:GetAsync("ns:work:" .. ref.id) end)
-    if not okGet then
-      -- throttling, or the key vanished. Skip this work and keep going.
+    local work
+    for attempt = 1, 3 do
+      local ok, res = pcall(function() return store:GetAsync("ns:work:" .. ref.id) end)
+      if ok then
+        work = res
+        break
+      end
+      task.wait(attempt) -- 1s, then 2s
+    end
+    if not work then
       failed += 1
-      warn("[NightShift] could not read " .. tostring(ref.id) .. " — skipping")
-    elseif work then
+      warn("[NightShift] could not read " .. tostring(ref.id) .. " after 3 tries — skipping")
+    else
       local okBuild, err = pcall(build, work)
       if okBuild then
         built += 1
@@ -577,6 +592,8 @@ if state then
         warn("[NightShift] could not build " .. tostring(work.id) .. ": " .. tostring(err))
       end
     end
+    -- yield between reads: 17 in one frame is what exhausted the budget
+    task.wait(0.15)
   end
 end
 
