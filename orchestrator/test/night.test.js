@@ -450,6 +450,75 @@ test("the workflow's NIGHT validator rejects what would poison the chain", () =>
   }
 });
 
+test("the hash does not depend on key order — the store reorders them", () => {
+  // The bug that broke the chain on 2026-10-24: the hash was computed over the
+  // in-memory key order; the DataStore returns the same value with keys sorted
+  // alphabetically. Five assemblies in one night and the chain broke at the first.
+  const { computeHash, canonicalJson } = require("../dist/hash.js");
+
+  const partsA = [
+    { shape: "block", size: [10, 20, 10], pos: [0, 10, 0], color: "amber", material: "glass", emissive: 0.5 },
+  ];
+  const partsB = [
+    { emissive: 0.5, material: "glass", color: "amber", pos: [0, 10, 0], size: [10, 20, 10], shape: "block" },
+  ];
+
+  const h = (parts) => computeHash(20261025, "sun rise tower", "machine", 0, 0, "sun rise tower near sky", "genesis", parts);
+  assert.strictEqual(h(partsA), h(partsB), "same work, different key order, same hash");
+  assert.strictEqual(
+    canonicalJson(partsA),
+    canonicalJson(partsB),
+    "canonical form must be identical for both orders",
+  );
+
+  // and it must be stable no matter how deeply the objects nest
+  const deep1 = { b: { d: [1, { z: 1, a: 2 }], c: 3 }, a: 1 };
+  const deep2 = { a: 1, b: { c: 3, d: [1, { a: 2, z: 1 }] } };
+  assert.strictEqual(canonicalJson(deep1), canonicalJson(deep2));
+});
+
+test("the browser and the server canonicalise byte for byte", () => {
+  // chain.js is a second implementation of the same rule. It has drifted before.
+  const { canonicalJson } = require("../dist/hash.js");
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const src = fs.readFileSync(
+    path.join(__dirname, "..", "..", "site", "chain.js"),
+    "utf8",
+  );
+  const body = src.slice(src.indexOf("function canonical(value)"), src.indexOf("window.nsChain"));
+  const browserCanonical = new Function(body + "; return canonical;")();
+
+  const cases = [
+    [20261025, "t", "monolith", 0, 0, "j", "genesis"],
+    [20261025, "t", "machine", 12, -7, "j", "abc", [{ shape: "block", size: [1, 2, 3], color: "ink" }]],
+    [{ z: 1, a: [{ y: 2, x: 1 }] }, "flat", 3, null, true],
+  ];
+  for (const c of cases) {
+    assert.strictEqual(
+      JSON.stringify(browserCanonical(c)),
+      canonicalJson(c),
+      `mismatch on ${JSON.stringify(c)}`,
+    );
+  }
+});
+
+test("a work verifies from the store copy as well as the build copy", () => {
+  // The store returns parts with keys sorted; the log kept the build order. Both
+  // must verify now, or the site and status disagree about the same work.
+  const { computeHash } = require("../dist/hash.js");
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const line = fs.readFileSync(path.join(__dirname, "..", "..", "site", "log.jsonl"), "utf8")
+    .trim().split("\n").find((l) => l.includes("-c") || l.includes("-f"));
+  if (!line) return; // no assembly on the plot yet
+  const w = JSON.parse(line);
+  const h = () => computeHash(w.night, w.title, w.form, w.site.x, w.site.z, w.journal, w.prevHash, w.parts);
+  const shuffled = { ...w, parts: w.parts.map((p) => Object.fromEntries(Object.entries(p).reverse())) };
+  const hs = () => computeHash(shuffled.night, shuffled.title, shuffled.form, shuffled.site.x, shuffled.site.z, shuffled.journal, shuffled.prevHash, shuffled.parts);
+  assert.strictEqual(h(), hs(), "a key-order shuffle must not change the hash");
+});
+
 test("an impossible NIGHT degrades instead of throwing", () => {
   // October 32 is not a date; readTelemetry used to throw RangeError and the
   // whole night became a void (run #14, night 20261032)

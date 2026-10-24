@@ -18,6 +18,28 @@
     return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, "0")).join("");
   }
 
+  // Canonical JSON: object keys sorted, recursively. This is the same rule as
+  // orchestrator/src/hash.ts and it has to be, to the byte.
+  //
+  // It exists because the DataStore returns stored values with keys sorted
+  // alphabetically while the hash was computed over the in-memory order the
+  // model happened to send. Every work carrying `parts` — an array of objects —
+  // verified against one copy and failed against the other. The chain broke on
+  // 2026-10-24 the first time a night built five assemblies.
+  //
+  // The test `the browser and the server agree byte for byte` runs the same
+  // payloads through both implementations, so a change on one side cannot be
+  // shipped without the other.
+  function canonical(value) {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value !== null && typeof value === "object") {
+      const out = {};
+      for (const key of Object.keys(value).sort()) out[key] = canonical(value[key]);
+      return out;
+    }
+    return value;
+  }
+
   // The payload rule: `parts` is appended ONLY when the work has them, so the
   // entries published before the parts schema keep the exact hash they were
   // signed with. A null for the old ones would break entry 1 of the chain.
@@ -26,7 +48,7 @@
     for (const e of entries) {
       const base = [e.night, e.title, e.form, e.site.x, e.site.z, e.journal, prev];
       if (e.parts !== undefined && e.parts !== null) base.push(e.parts);
-      const expected = (await sha256Hex(JSON.stringify(base))).slice(0, 16);
+      const expected = (await sha256Hex(JSON.stringify(canonical(base)))).slice(0, 16);
       if (expected !== e.hash) {
         return { ok: false, brokenAt: e.id, expected, got: e.hash, exp: expected };
       }
@@ -35,5 +57,5 @@
     return { ok: true };
   }
 
-  window.nsChain = { sha256Hex, verifyChain };
+  window.nsChain = { sha256Hex, verifyChain, canonical };
 })();
