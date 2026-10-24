@@ -38,13 +38,15 @@ function esc(s: string): string {
 }
 
 function partSize(p: Part): { w: number; h: number; d: number } {
-  // block/plate/wedge use all three; round shapes read width as diameter
+  // The shape the BUILDER makes, not the shape the name suggests: cone and torus
+  // have no Roblox primitive without an asset, so builder.lua builds both as a
+  // block of [size0, size1, size2]. This used to read a torus's size0 as a radius
+  // and double it while ignoring size2, so the preview showed a different object
+  // from the one standing in the game.
   switch (p.shape) {
-    case "plate":
-    case "block":
-    case "wedge": return { w: p.size[0], h: p.size[1], d: p.size[2] };
-    case "torus": return { w: p.size[0] * 2, h: p.size[1], d: p.size[0] * 2 };
-    default: return { w: p.size[0], h: p.size[0], d: p.size[0] };
+    case "cylinder":
+    case "sphere": return { w: p.size[0], h: p.size[0], d: p.size[0] };
+    default: return { w: p.size[0], h: p.size[1], d: p.size[2] };
   }
 }
 
@@ -63,11 +65,10 @@ function renderParts(cx: number, cy: number, parts: Part[]): string {
       const glow = (p.emissive ?? 0) > 0.5;
       const top = groundY - p.pos[1] - h;
       let shape = "";
-      if (p.shape === "cylinder" || p.shape === "sphere" || p.shape === "cone") {
+      // Only cylinder and sphere are round in the game. cone and torus are
+      // blocks there, so they are drawn as blocks here.
+      if (p.shape === "cylinder" || p.shape === "sphere") {
         shape = `<circle cx="${x.toFixed(1)}" cy="${(top + h / 2).toFixed(1)}" r="${(w / 2).toFixed(1)}" fill="${color}"/>`;
-      } else if (p.shape === "torus") {
-        shape =
-          `<circle cx="${x.toFixed(1)}" cy="${(top + h / 2).toFixed(1)}" r="${(w / 2).toFixed(1)}" fill="none" stroke="${color}" stroke-width="${Math.max(1.5, h).toFixed(1)}"/>`;
       } else {
         shape = `<rect x="${(x - w / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="${color}"/>`;
       }

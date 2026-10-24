@@ -104,12 +104,20 @@ const PALETTE = {
 };
 
 /** [width, height, depth] — round shapes read width as diameter. */
+// Size of one part in studs — the shape the BUILDER will actually make.
+//
+// cone and torus have no Roblox primitive without an asset, so builder.lua
+// builds them as a BLOCK of [size0, size1, size2]. This page used to draw a
+// cone and a ring with size0 read as a radius and doubled, ignoring size2
+// entirely: the site showed a different object from the one standing in the
+// game. The page's job is to show what exists, so it draws the block.
 function partSize(p) {
   switch (p.shape) {
     case 'plate':
     case 'block':
-    case 'wedge': return { w: p.size[0], h: p.size[1], d: p.size[2] };
-    case 'torus': return { w: p.size[0] * 2, h: p.size[1], d: p.size[0] * 2 };
+    case 'wedge':
+    case 'cone':
+    case 'torus': return { w: p.size[0], h: p.size[1], d: p.size[2] };
     default: return { w: p.size[0], h: p.size[0], d: p.size[0] };
   }
 }
@@ -119,8 +127,6 @@ function partGeometry(p) {
   switch (p.shape) {
     case 'cylinder': return new THREE.CylinderGeometry(w / 2, w / 2, h, 24);
     case 'sphere':   return new THREE.SphereGeometry(w / 2, 24, 18);
-    case 'cone':     return new THREE.ConeGeometry(w / 2, h, 20);
-    case 'torus':    return new THREE.TorusGeometry(w / 2, Math.max(0.6, h), 14, 36);
     case 'wedge':    return new THREE.CylinderGeometry(w / 2, w / 2, h, 3, 1);
     default:         return new THREE.BoxGeometry(w, h, d);
   }

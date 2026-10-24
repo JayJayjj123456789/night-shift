@@ -52,10 +52,10 @@ import { runNight } from "./index";
     console.log(`  ${k}:`, JSON.stringify(v).slice(0, 120));
   }
 
-  // check preview file
+  // check preview file — it lives in site/, not next to dist/
   const { existsSync: fx } = require("node:fs") as typeof import("node:fs");
   if (process.env.NIGHT) {
-    const previewPath = join(__dirname, "..", "previews", `n${process.env.NIGHT}-a.svg`);
+    const previewPath = join(__dirname, "..", "..", "site", "previews", `n${process.env.NIGHT}-a.svg`);
     console.log("\npreview file exists:", fx(previewPath));
   }
 })().catch((e) => {
