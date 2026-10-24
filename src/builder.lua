@@ -18,7 +18,7 @@
 -- orchestrator reads that and compares it with this line, and `npm run status`
 -- then says "the place is running v2, the repo has v3" instead of staying green
 -- over a place that was never re-installed.
-local BUILDER_VERSION = 10
+local BUILDER_VERSION = 11
 
 local DSS = game:GetService("DataStoreService")
 local Messaging = game:GetService("MessagingService")
@@ -56,12 +56,22 @@ local function rng(seed)
   end
 end
 
+-- Roblox will NOT coerce a table into a Vector3. `p.Size = {1, 2, 3}` throws
+-- "Unable to assign property Size. Vector3 expected, got table", and that single
+-- line took every assembly down: addPart passes a plain table for size, so all
+-- five works with `parts` failed while all twelve templated works — which build
+-- their sizes with Vector3.new — were fine. The heartbeat's error text found it.
+local function v3(t)
+  if typeof(t) == "Vector3" then return t end
+  return Vector3.new(t[1] or 1, t[2] or 1, t[3] or 1)
+end
+
 local function part(model, name, size, cf, props)
   local p = Instance.new("Part")
   p.Name = name
   p.Anchored = true
   p.CanCollide = false
-  p.Size = size
+  p.Size = v3(size)
   p.CFrame = cf
   p.TopSurface = Enum.SurfaceType.Smooth
   p.BottomSurface = Enum.SurfaceType.Smooth
@@ -83,7 +93,7 @@ local function wedge(model, name, size, cf, props)
   w.Name = name
   w.Anchored = true
   w.CanCollide = false
-  w.Size = size
+  w.Size = v3(size)
   w.CFrame = cf
   w.TopSurface = Enum.SurfaceType.Smooth
   w.BottomSurface = Enum.SurfaceType.Smooth

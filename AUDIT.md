@@ -338,3 +338,30 @@ destroys the existing model before rebuilding, so the subscriber is idempotent.
 38 tests, including one that drives a stubbed `fetch` through 502→503→success, a
 thrown socket error, a 404 that must not retry, a 403 that must not retry, and an
 exhausted retry budget that must still throw.
+
+---
+
+## S1 — Roblox does not coerce a table into a Vector3
+
+One line took down every assembly:
+
+  p.Size = { 1, 2, 3 }   →   "Unable to assign property Size. Vector3 expected, got table"
+
+`addPart` passed a plain table for size, so all five works with `parts` failed
+while all twelve templated works — which build their sizes with `Vector3.new` —
+were fine. Found by the heartbeat's error text after four versions of counting,
+naming, and re-testing.
+
+Fixed with a `v3()` coercion in `part()` and `wedge()`, the two places that
+assign a size.
+
+**Proven, not assumed.** A Luau harness (`tools/` — Roblox API stubbed: Instance,
+Enum, Vector3, CFrame, Color3, UDim2, DataStoreService, MessagingService) runs the
+REAL `builder.lua` against the REAL works from `site/log.jsonl`:
+
+  before (v10):  11 built, 6 failed   ← the five assemblies, on exactly that error
+  after  (v11):  16 built, 1 failed   ← and the one is `label.Size`, a UDim2 the
+                                         stub wrongly type-checks as a Vector3
+
+The harness is now the regression guard for this class: any future table passed
+where Roblox wants a Vector3 fails locally instead of in a published place.
