@@ -18,7 +18,7 @@
 -- orchestrator reads that and compares it with this line, and `npm run status`
 -- then says "the place is running v2, the repo has v3" instead of staying green
 -- over a place that was never re-installed.
-local BUILDER_VERSION = 9
+local BUILDER_VERSION = 10
 
 local DSS = game:GetService("DataStoreService")
 local Messaging = game:GetService("MessagingService")
@@ -569,7 +569,7 @@ end)
 -- So: a small yield between reads, and three attempts with a backoff on each.
 local state = store:GetAsync("ns:state")
 local built = 0
-local failedIds = {}
+local failedIds, failedErrs = {}, {}
 if state then
   for _, ref in ipairs(state.works or {}) do
     local work
@@ -582,14 +582,20 @@ if state then
       task.wait(attempt) -- 1s, then 2s
     end
     if not work then
-      if #failedIds < 20 then failedIds[#failedIds + 1] = tostring(ref.id) end
+      if #failedIds < 20 then
+        failedIds[#failedIds + 1] = tostring(ref.id)
+        failedErrs[#failedErrs + 1] = "read failed"
+      end
       warn("[NightShift] could not read " .. tostring(ref.id) .. " after 3 tries — skipping")
     else
       local okBuild, err = pcall(build, work)
       if okBuild then
         built += 1
       else
-        if #failedIds < 20 then failedIds[#failedIds + 1] = tostring(work.id) end
+        if #failedIds < 20 then
+          failedIds[#failedIds + 1] = tostring(work.id)
+          failedErrs[#failedErrs + 1] = tostring(err)
+        end
         warn("[NightShift] could not build " .. tostring(work.id) .. ": " .. tostring(err))
       end
     end
@@ -612,6 +618,7 @@ pcall(function()
     works = built,
     failed = #failedIds,
     failedIds = failedIds,
+    failedErrs = failedErrs,
   })
 end)
 
