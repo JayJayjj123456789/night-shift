@@ -519,6 +519,100 @@ test("a work verifies from the store copy as well as the build copy", () => {
   assert.strictEqual(h(), hs(), "a key-order shuffle must not change the hash");
 });
 
+test("the constitution budgets the shape the builder actually makes", () => {
+  // Two mismatches found 2026-10-24, both invisible until an assembly exercised
+  // them. Both were the same class: the constitution and the builder disagreed
+  // about what a part IS.
+  const { assertConstitution } = require("../dist/constitution.js");
+  const { Decision } = require("../dist/schema.js");
+
+  const state = { night: 20261025, journalHead: "genesis", works: [], plot: { size: 512 } };
+  const d = (parts) => Decision.parse({
+    title: "stone tower", intent: "x", form: "machine", site: { x: 0, z: 0 },
+    params: {}, journal: "stone tower near sky", risk: "low", parts,
+  });
+
+  // 1. pos[1] is the part's CENTRE. A part centred at 80 and 20 tall tops out at
+  //    exactly 90 and must be allowed — the old formula counted 80+20=100.
+  assert.doesNotThrow(() => assertConstitution(d([
+    { shape: "block", size: [4, 20, 4], pos: [0, 80, 0], color: "bone" },
+  ]), state), "a part whose top is exactly 90 must be legal");
+
+  // ...and one that genuinely passes 90 must still be refused
+  assert.throws(() => assertConstitution(d([
+    { shape: "block", size: [4, 20, 4], pos: [0, 81, 0], color: "bone" },
+  ]), state), /past 90 studs tall/);
+
+  // 2. a torus has no primitive: the builder makes it a BLOCK of [w,h,d]. The
+  //    constitution used to budget it as a round shape [w,w], so a torus 5 wide
+  //    and 60 deep passed the reach check and was built as a slab 60 deep.
+  assert.throws(() => assertConstitution(d([
+    { shape: "torus", size: [5, 2, 60], pos: [0, 5, 40], color: "rust" },
+  ]), state), /outside 64 studs/);
+
+  // the same numbers as a block are refused for the same reason, which is the
+  // point: one shape, one budget
+  assert.throws(() => assertConstitution(d([
+    { shape: "block", size: [5, 2, 60], pos: [0, 5, 40], color: "rust" },
+  ]), state), /outside 64 studs/);
+});
+
+test("a work survives a round trip through the DataStore unchanged", async (t) => {
+  // The bug that broke the chain on 2026-10-24: the hash was computed over the
+  // in-memory key order, and the store returns the same value with keys sorted
+  // alphabetically. A work with `parts` verified against one copy and failed
+  // against the other. This writes one through the real store and verifies it.
+  //
+  // Skipped where no store is configured, so `npm test` stays a pure unit run in
+  // CI (which has the secrets but no .env file) and only proves the round trip
+  // where a universe is actually reachable.
+  let D;
+  try {
+    D = require("../dist/datastore.js");
+    D.getUniverse();
+  } catch {
+    t.skip("no DataStore configured — the round trip needs a universe");
+    return;
+  }
+  const { computeHash, canonicalJson } = require("../dist/hash.js");
+  const { signHash, verifyWithAny, allKeys } = require("../dist/sign.js");
+
+  const parts = [
+    { shape: "block", size: [10, 20, 10], pos: [0, 10, 0], color: "amber", material: "glass", emissive: 0.5 },
+    { shape: "torus", size: [6, 3, 24], pos: [14, 6, 0], color: "jade", rot: [0, 45, 0] },
+  ];
+  const work = {
+    id: "n20261025-selftest", night: 20261025, title: "stone tower", intent: "round trip",
+    form: "machine", site: { x: 12, z: -7 }, params: { parts: 0.5, speed: 0.4, glow: 0.2 },
+    parts, seed: 20261025,
+    journal: "stone tower near sky", prevHash: "genesis", builderVersion: 1,
+  };
+  work.hash = computeHash(
+    work.night, work.title, work.form, work.site.x, work.site.z, work.journal, work.prevHash, work.parts,
+  );
+
+  const { getEntry, putEntry } = D;
+  await putEntry("ns:work:n20261025-selftest", work);
+  const back = await getEntry("ns:work:n20261025-selftest");
+  assert.ok(back, "the store returned the work");
+
+  // the store reorders keys — that is the whole point of the exercise
+  assert.notStrictEqual(JSON.stringify(back), JSON.stringify(work));
+  assert.strictEqual(canonicalJson(back), canonicalJson(work), "canonical form must be identical");
+
+  const rehashed = computeHash(
+    back.night, back.title, back.form, back.site.x, back.site.z, back.journal, back.prevHash, back.parts,
+  );
+  assert.strictEqual(rehashed, work.hash, "a work must verify from the copy the store returns");
+
+  // and a signature over it must survive the same trip
+  const sig = signHash(work.hash);
+  assert.ok(sig);
+  const keys = await allKeys();
+  assert.ok(verifyWithAny(keys, back.hash, sig), "the signature must verify against the stored work");
+
+});
+
 test("an impossible NIGHT degrades instead of throwing", () => {
   // October 32 is not a date; readTelemetry used to throw RangeError and the
   // whole night became a void (run #14, night 20261032)

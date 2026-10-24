@@ -289,3 +289,29 @@ ever run with an empty plot — and it was broken (black rectangle).
 2. Whether the piece gets a visitor. Everything about attention is theory until
    someone walks up to a work.
 3. The prompt's size at 30 works. That is where the next quiet failure lives.
+
+---
+
+## S1 — the store can reorder an entry's keys asynchronously
+
+The canonical-hash fix above was diagnosed as "the DataStore sorts keys". Two
+experiments on 2026-10-24 say that is only half of it:
+
+- write a value, read it straight back → **key order preserved**, for both orders
+  tested
+- `n20261025-c` verified at 05:55 and failed at 20:23 **with no write from us in
+  between**
+
+So the store does not normalise at write time; it normalises *later*, on its own
+schedule, for some entries. A hash over the raw serialisation is therefore not
+merely wrong for some values — it is **unstable over time**, and a chain can flip
+from verified to broken between two runs that changed nothing.
+
+That is worse than a deterministic bug, because it destroys the meaning of a green
+run: `resync` said "chain verified ✓" for the same data `status` called BROKEN.
+The canonical form is the only version that survives this, which is why the fix is
+not "hash a sorted copy" but "hash a form that cannot be reordered".
+
+**Corollary worth keeping:** any value that crosses a store and is later hashed,
+compared or signed must be canonicalised *at the boundary*, not assumed stable
+because it was stable when it was written.

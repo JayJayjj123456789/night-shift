@@ -10,20 +10,38 @@ const MAX_ASSEMBLY_HEIGHT = 90;
 /** Ceiling on total volume, so "8 blocks" cannot become a wall of blocks. */
 const MAX_ASSEMBLY_VOLUME = 30000;
 
-/** Height of one part in studs, whatever its shape calls it. */
+/**
+ * Height of one part in studs, whatever its shape calls it.
+ *
+ * `pos[1]` is the part's CENTRE height — the schema says so and the builder does
+ * so, because a Roblox Part's position is its centre. So the top of a part is
+ * `pos[1] + height/2`, not `pos[1] + height`. The old formula treated the position
+ * as the base and rejected assemblies that were perfectly legal: a part centred at
+ * 80 and 20 tall tops out at exactly 90 and was refused for reaching 100.
+ */
 function partHeight(p: Part): number {
   switch (p.shape) {
     case "sphere": return p.size[0];
-    case "torus": return p.size[1];
     default: return p.size[1];
   }
 }
 
+/**
+ * Width and depth of one part, in studs — the shape the BUILDER will actually
+ * make, not the shape the name suggests.
+ *
+ * Torus is the trap: the schema allows it, the builder has no torus primitive
+ * without an asset and falls back to a block of `[size[0], size[1], size[2]]`,
+ * while this function used to budget it as a round shape of `[size[0], size[0]]`.
+ * A torus 5 wide and 60 deep therefore passed a reach check it should have failed
+ * and was built as a slab sticking out past the site's budget.
+ */
 function partFootprint(p: Part): [number, number] {
   switch (p.shape) {
     case "plate":
     case "block":
-    case "wedge": return [p.size[0], p.size[2]];
+    case "wedge":
+    case "torus": return [p.size[0], p.size[2]];
     default: return [p.size[0], p.size[0]];
   }
 }
@@ -40,7 +58,8 @@ function assertParts(parts: Part[]): void {
     if (Math.abs(p.pos[0]) + w / 2 > PART_REACH || Math.abs(p.pos[2]) + d / 2 > PART_REACH) {
       throw new Error(`parts[${i}] sits outside ${PART_REACH} studs of the site`);
     }
-    if (p.pos[1] + h > MAX_ASSEMBLY_HEIGHT) {
+    // centre-based: the top of the part is pos[1] + half its height
+    if (p.pos[1] + h / 2 > MAX_ASSEMBLY_HEIGHT) {
       throw new Error(`parts[${i}] pushes the assembly past ${MAX_ASSEMBLY_HEIGHT} studs tall`);
     }
     volume += w * h * d;
