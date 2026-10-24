@@ -639,6 +639,60 @@ test("the preview escapes the title instead of pasting it into the SVG", () => {
   }
 });
 
+test("a transient store error is retried, a permanent one is not", async () => {
+  // A single 502 on 2026-10-24 took a whole read down. The LLM path had three
+  // attempts and a backoff; the store had one shot, and a night that cannot read
+  // the plot cannot build on it — and the idempotent guard then refuses to run
+  // that night again, so one transient error became a permanent empty night.
+  process.env.ROBLOX_API_KEY = "k";
+  process.env.UNIVERSE_ID = "1";
+  const { getEntry, putEntry } = require("../dist/datastore.js");
+
+  const realFetch = global.fetch;
+  const calls = [];
+  const stub = (seq) => async (url, opts) => {
+    calls.push({ url, method: opts && opts.method });
+    const next = seq.shift();
+    if (typeof next === "number") return { ok: false, status: next, text: async () => "" };
+    if (next instanceof Error) throw next;
+    return { ok: true, status: 200, json: async () => ({ value: { v: 1 } }), text: async () => "" };
+  };
+
+  try {
+    // 502, 503, then success -> the read succeeds and the caller never knows
+    global.fetch = stub([502, 503, "ok"]);
+    const v = await getEntry("ns:state");
+    assert.deepStrictEqual(v, { v: 1 });
+    assert.strictEqual(calls.length, 3, "it should have retried twice");
+
+    // a network throw is the same class as a 502
+    calls.length = 0;
+    global.fetch = stub([new Error("socket hang up"), "ok"]);
+    assert.deepStrictEqual(await getEntry("ns:state"), { v: 1 });
+    assert.strictEqual(calls.length, 2);
+
+    // 404 is an answer, not a failure — never retried
+    calls.length = 0;
+    global.fetch = stub([404]);
+    assert.strictEqual(await getEntry("ns:state"), null);
+    assert.strictEqual(calls.length, 1);
+
+    // 403 is permanent; retrying it three times only slows the failure down
+    calls.length = 0;
+    global.fetch = stub([403, 403, 403, 403]);
+    await assert.rejects(() => getEntry("ns:state"), /get ns:state -> 403/);
+    assert.strictEqual(calls.length, 1, "a 403 must not be retried");
+
+    // and when every retry is exhausted it still throws, loudly
+    calls.length = 0;
+    global.fetch = stub([502, 502, 502, 502]);
+    await assert.rejects(() => putEntry("ns:x", { a: 1 }), /put ns:x -> 502/);
+    assert.strictEqual(calls.length, 4, "three retries plus the original attempt");
+  } finally {
+    global.fetch = realFetch;
+  }
+});
+
 test("the builder version crosses the gap between the repo and the place", () => {
   // The repo cannot read the running place and the place cannot read the repo.
   // BUILDER_VERSION is the only thing that travels, so its comparison is the

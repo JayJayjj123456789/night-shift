@@ -315,3 +315,26 @@ not "hash a sorted copy" but "hash a form that cannot be reordered".
 **Corollary worth keeping:** any value that crosses a store and is later hashed,
 compared or signed must be canonicalised *at the boundary*, not assumed stable
 because it was stable when it was written.
+
+---
+
+## S2 — one transient store error cost a whole night
+
+The LLM path has had three attempts and a backoff for a while. The DataStore path
+had **one shot**. On 2026-10-24 a read returned `502` and took the run with it — a
+night that cannot read the plot cannot build on it, and the idempotent guard then
+refuses to run that night again, so one transient error became a permanent empty
+night.
+
+`withRetry` now wraps every store call: 429/500/502/503/504 and a thrown `fetch`
+(DNS, socket, TLS) are retried with 1s/3s/7s backoff. **404 is never retried** — it
+is the answer "no such entry", not a failure — and neither are 400/403, which fail
+identically forever and only slow the error down.
+
+`publish` is retried deliberately: a dropped message means the live game does not
+build the work until it restarts, and a duplicate is harmless because `build()`
+destroys the existing model before rebuilding, so the subscriber is idempotent.
+
+38 tests, including one that drives a stubbed `fetch` through 502→503→success, a
+thrown socket error, a 404 that must not retry, a 403 that must not retry, and an
+exhausted retry budget that must still throw.
