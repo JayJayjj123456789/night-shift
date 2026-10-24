@@ -18,7 +18,7 @@
 -- orchestrator reads that and compares it with this line, and `npm run status`
 -- then says "the place is running v2, the repo has v3" instead of staying green
 -- over a place that was never re-installed.
-local BUILDER_VERSION = 5
+local BUILDER_VERSION = 6
 
 local DSS = game:GetService("DataStoreService")
 local Messaging = game:GetService("MessagingService")

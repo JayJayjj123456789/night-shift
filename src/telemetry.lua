@@ -19,6 +19,12 @@ local acc = {}       -- [date][workId] = { near, dwell }  this server's running 
 local flushed = {}   -- [date][workId] = { near, dwell }  what this server last wrote
 local ticks = 0      -- loop iterations; 5s each, so 12 is a minute
 
+-- What the last iteration actually saw. `wrote: 0` on its own does not say
+-- whether nobody was playing, nobody was near a work, or no work matched the
+-- name — three completely different failures that all look identical from the
+-- store. These three numbers separate them in one read.
+local seen = { players = 0, models = 0, nearest = -1 }
+
 -- Flush every 12th iteration of the 5-second loop — a minute — counted rather
 -- than read from a clock.
 --
@@ -88,7 +94,14 @@ local function flush()
   -- loop never runs" and "the loop runs but the write fails" look identical from
   -- outside — which is exactly the confusion this whole session has been fixing.
   pcall(function()
-    store:SetAsync("ns:telemetry:status", { at = os.time(), flushes = ticks, wrote = wrote })
+    store:SetAsync("ns:telemetry:status", {
+      at = os.time(),
+      flushes = ticks,
+      wrote = wrote,
+      players = seen.players,
+      models = seen.models,
+      nearest = seen.nearest >= 0 and math.floor(seen.nearest) or -1,
+    })
   end)
 end
 
@@ -100,6 +113,14 @@ task.spawn(function()
 
     local root = workspace:FindFirstChild("NightShift")
     if root then
+      seen.models = 0
+      seen.nearest = -1
+      for _, model in ipairs(root:GetChildren()) do
+        if model:IsA("Model") and string.match(model.Name, "^n%d+%-%a") then
+          seen.models += 1
+        end
+      end
+      seen.players = #Players:GetPlayers()
       for _, player in ipairs(Players:GetPlayers()) do
         local char = player.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -114,6 +135,7 @@ task.spawn(function()
               end
               if not hasPart then continue end
               local dist = (hrp.Position - model:GetPivot().Position).Magnitude
+              if seen.nearest < 0 or dist < seen.nearest then seen.nearest = dist end
               if dist <= 30 then
                 local row = acc[date][model.Name] or { near = 0, dwell = 0 }
                 row.near += 1
