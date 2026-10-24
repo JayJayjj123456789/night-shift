@@ -18,7 +18,7 @@
 -- orchestrator reads that and compares it with this line, and `npm run status`
 -- then says "the place is running v2, the repo has v3" instead of staying green
 -- over a place that was never re-installed.
-local BUILDER_VERSION = 8
+local BUILDER_VERSION = 9
 
 local DSS = game:GetService("DataStoreService")
 local Messaging = game:GetService("MessagingService")
@@ -568,7 +568,8 @@ end)
 --
 -- So: a small yield between reads, and three attempts with a backoff on each.
 local state = store:GetAsync("ns:state")
-local built, failed = 0, 0
+local built = 0
+local failedIds = {}
 if state then
   for _, ref in ipairs(state.works or {}) do
     local work
@@ -581,14 +582,14 @@ if state then
       task.wait(attempt) -- 1s, then 2s
     end
     if not work then
-      failed += 1
+      if #failedIds < 20 then failedIds[#failedIds + 1] = tostring(ref.id) end
       warn("[NightShift] could not read " .. tostring(ref.id) .. " after 3 tries — skipping")
     else
       local okBuild, err = pcall(build, work)
       if okBuild then
         built += 1
       else
-        failed += 1
+        if #failedIds < 20 then failedIds[#failedIds + 1] = tostring(work.id) end
         warn("[NightShift] could not build " .. tostring(work.id) .. ": " .. tostring(err))
       end
     end
@@ -597,15 +598,20 @@ if state then
   end
 end
 
--- The heartbeat again, now carrying the count. "The place is running v6" and
--- "the place is running v6 and has all 17 works" are very different facts, and
--- only the second one means the site is telling the truth.
+-- The heartbeat again, now carrying the count — and the ids.
+--
+-- v7 and v8 both came back `works: 12, failed: 5`, the same five twice, with a
+-- retry and a yield added in between. So it is deterministic, not throttling,
+-- and a count that repeats tells us nothing new. A count says THAT something is
+-- wrong; the ids say WHERE. This session has been one long demonstration that
+-- the difference between those two is the whole value.
 pcall(function()
   store:SetAsync("ns:builder", {
     version = BUILDER_VERSION,
     at = os.time(),
     works = built,
-    failed = failed,
+    failed = #failedIds,
+    failedIds = failedIds,
   })
 end)
 
