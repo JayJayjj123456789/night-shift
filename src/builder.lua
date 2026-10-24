@@ -18,7 +18,7 @@
 -- orchestrator reads that and compares it with this line, and `npm run status`
 -- then says "the place is running v2, the repo has v3" instead of staying green
 -- over a place that was never re-installed.
-local BUILDER_VERSION = 6
+local BUILDER_VERSION = 7
 
 local DSS = game:GetService("DataStoreService")
 local Messaging = game:GetService("MessagingService")
@@ -533,7 +533,13 @@ end
 -- heartbeat exists to remove. It needs no state, so it goes first.
 --
 -- One write per server start. Wrapped: a failed heartbeat must never stop the
--- plot from being built.
+-- heartbeat: which builder is actually running in this place.
+--
+-- FIRST, before anything that can fail. It was written after the startup rebuild,
+-- which meant that if a single GetAsync threw or a work failed to build, the
+-- script died and the place reported nothing — and "nothing" is indistinguishable
+-- from "this place never got the new code", which is the exact confusion the
+-- heartbeat exists to remove. It needs no state, so it goes first.
 pcall(function()
   store:SetAsync("ns:builder", {
     version = BUILDER_VERSION,
@@ -542,13 +548,49 @@ pcall(function()
 end)
 
 -- startup: rebuild everything from state
+--
+-- Seventeen works are on the plot and three were standing in the world on
+-- 2026-10-24. The loop had no protection at all: one throttled GetAsync or one
+-- work that fails to build throws, the script dies where it stands, and the place
+-- keeps running with however many works happened to be built before the error.
+-- The heartbeat (which now runs first, so it always fires) made that visible:
+-- `models: 3` against a log with 17 entries.
+--
+-- So every step is now guarded, and the heartbeat carries the count. A plot that
+-- is missing works is a fact the orchestrator can read, not a thing someone has
+-- to notice by walking around in-game.
 local state = store:GetAsync("ns:state")
+local built, failed = 0, 0
 if state then
   for _, ref in ipairs(state.works or {}) do
-    local work = store:GetAsync("ns:work:" .. ref.id)
-    if work then build(work) end
+    local okGet, work = pcall(function() return store:GetAsync("ns:work:" .. ref.id) end)
+    if not okGet then
+      -- throttling, or the key vanished. Skip this work and keep going.
+      failed += 1
+      warn("[NightShift] could not read " .. tostring(ref.id) .. " — skipping")
+    elseif work then
+      local okBuild, err = pcall(build, work)
+      if okBuild then
+        built += 1
+      else
+        failed += 1
+        warn("[NightShift] could not build " .. tostring(work.id) .. ": " .. tostring(err))
+      end
+    end
   end
 end
+
+-- The heartbeat again, now carrying the count. "The place is running v6" and
+-- "the place is running v6 and has all 17 works" are very different facts, and
+-- only the second one means the site is telling the truth.
+pcall(function()
+  store:SetAsync("ns:builder", {
+    version = BUILDER_VERSION,
+    at = os.time(),
+    works = built,
+    failed = failed,
+  })
+end)
 
 -- live: build new work the moment it's published
 Messaging:SubscribeAsync("nightshift", function(msg)
