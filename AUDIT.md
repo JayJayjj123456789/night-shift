@@ -131,7 +131,42 @@ it has already saved three nights. The residual risk is the opposite one: becaus
 `resync` trusts the store, a compromised store rewrites the site silently.
 Signatures cover it for signed works — after the wipe, everything is signed.
 
-## S3 — things that grow forever
+## S2 — the state entry has a ceiling, and it has a date
+
+`ns:state` grows one ref per work, forever. A Roblox DataStore entry is capped at
+**256 KB**, and `putEntry` fails once it is exceeded. After that every night fails,
+permanently, with an error that reads like a network problem rather than "the plot
+is full" — and `hesitate()` keeps writing voids at `freeSpot()` until the plot fills
+too.
+
+Measured 2026-10-24: **94 bytes a work**, 1,593 B for 17 works.
+
+| works per night | nights to the ceiling | wall clock |
+|---|---|---|
+| 26 (the cap he asked for) | ~108 | ~4 months |
+| 1 (the original design) | ~2,700 | ~7 years |
+
+So the freedom to build many works per night also multiplies the cliff by 26. The
+multi-work feature did not create this bug — it made a seven-year problem into a
+four-month one.
+
+**Mitigated, not fixed.** `status` now measures the entry and warns past 50%, with
+the number of nights left. A cliff with a date on it should announce itself.
+
+**The real fix, designed and not built:** split the chain into epochs.
+`ns:state` keeps `journalHead`, the current epoch and only the works of that epoch;
+`ns:epoch:{n}` holds the head of the closed epoch and the ids it covered, so
+`verifyChain` walks epoch by epoch and the whole history still verifies. It is a
+schema change touching the state shape the game reads, resync, status and the
+prompt — worth doing deliberately, with its own migration, not in the same hour as
+anything else.
+
+Until then the guard makes the date visible, and `MAX_WORKS_PER_NIGHT` is the dial:
+a lower cap buys proportionally more time.
+
+---
+
+## S3 — telemetry lost a whole server's attention, silently
 
 - `site/log.jsonl` is fetched whole by every page: ~1.2 KB per night, so ~440 KB
   a year. Fine now, will want splitting eventually.

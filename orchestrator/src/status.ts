@@ -4,6 +4,11 @@ import "./env";
 import { getEntry, getNight } from "./datastore";
 import { allKeys, verifyWithAny } from "./sign";
 import { repoBuilderVersion, compareBuilder } from "./builder-version";
+
+/** Roblox caps one DataStore entry at 256 KB; putEntry fails past it. */
+const DATASTORE_ENTRY_LIMIT = 256 * 1024;
+/** Mirrors index.ts — how many works one night may add. */
+const MAX_WORKS_PER_NIGHT = 26;
 import type { BuilderReport } from "./builder-version";
 import { verifyChain } from "./chain";
 import { createHash } from "node:crypto";
@@ -111,6 +116,28 @@ async function main() {
     }
   } else {
     info("no site/pubkey.pem — entries are hash-chained only");
+  }
+
+  // ---------- 2b. The state entry has a ceiling ----------
+  // ns:state grows one ref per work, forever. A Roblox DataStore entry is capped
+  // at 256 KB and putEntry fails once it is exceeded — after which every night
+  // fails, permanently, with an error that reads like a network problem rather
+  // than "the plot is full". Measured 2026-10-24: 94 bytes a work, so 26 works a
+  // night reaches the ceiling in about 108 nights. A cliff with a date on it
+  // deserves a warning long before the date.
+  const stateBytes = Buffer.byteLength(JSON.stringify(state));
+  const perWork = state.works.length ? stateBytes / state.works.length : 0;
+  if (perWork > 0) {
+    const pct = Math.round((stateBytes / DATASTORE_ENTRY_LIMIT) * 100);
+    const nightsLeft = Math.floor(
+      (DATASTORE_ENTRY_LIMIT - stateBytes) / (perWork * MAX_WORKS_PER_NIGHT),
+    );
+    const line = `ns:state is ${stateBytes} B (${pct}% of the ${DATASTORE_ENTRY_LIMIT / 1024} KB entry limit, ${perWork.toFixed(0)} B/work)`;
+    if (pct >= 50) {
+      warn(`${line} — about ${nightsLeft} nights of 26 works left (see AUDIT.md: the state entry has a ceiling)`);
+    } else {
+      info(line);
+    }
   }
 
   // ---------- 3. Tonight's state ----------
