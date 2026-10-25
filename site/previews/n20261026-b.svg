@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
     <rect width="512" height="512" fill="#111"/>
-    <circle cx="190.0" cy="78.0" r="1.2" fill="#5aa9e6" opacity="0.5"/><rect x="182.5" y="55.5" width="15.0" height="15.0" fill="#5aa9e6"/><circle cx="170.0" cy="78.0" r="1.2" fill="#e0a33a" opacity="0.5"/><circle cx="170.0" cy="63.0" r="5.0" fill="#e0a33a"/><circle cx="170.0" cy="58.0" r="3" fill="#fff" opacity="0.85"/>
-    <text x="8" y="500" fill="#888" font-size="10">n20261026-b · bright night river</text>
+    <rect x="363" y="301" width="4" height="60" fill="#fde68a"/><circle cx="365" cy="301" r="8" fill="#fde68a" opacity="0.6499999999999999"/><circle cx="365" cy="301" r="3" fill="#fde68a"/>
+    <text x="8" y="500" fill="#888" font-size="10">n20261026-b · new night light</text>
   </svg>
