@@ -2,13 +2,14 @@ import "./env"; // must be first — loads .env into process.env
 import { join } from "node:path";
 import { Decision } from "./schema";
 import type { State, Work } from "./schema";
-import { getEntry, putEntry, publish, getNight } from "./datastore";
+import { getEntry, putEntry, publish, getNight, WIPE_NIGHT } from "./datastore";
 import { computeHash } from "./hash";
 import { assertConstitution, freeSpot, OUTPUT_FORMS } from "./constitution";
 import { askLLM, readTelemetry } from "./llm";
 import type { Attention } from "./llm";
 import { renderPreview } from "./preview";
 import { signHash, writePublicKey, publishPublicKey } from "./sign";
+import { wipePlot } from "./wipe";
 
 /** One model answer, kept whether it was accepted or not. */
 export type RawAttempt = {
@@ -365,8 +366,23 @@ export async function runNight(): Promise<void> {
 
 // run when invoked directly
 if (require.main === module) {
-  runNight().catch((e) => {
-    console.error(e);
-    process.exit(1);
-  });
+  // NIGHT=19700101 is the wipe sentinel: clear the plot, then build tonight on
+  // the empty one. The dispatch token cannot edit a workflow file, so the
+  // command travels in the date — and this branch is the only place it is read.
+  if (getNight() === WIPE_NIGHT) {
+    (async () => {
+      const { night } = await wipePlot(`wipe-${new Date().toISOString().slice(0, 10)}`);
+      process.env.NIGHT = String(night);
+      console.log(`NIGHT reset to ${night} — building on the empty plot`);
+      await runNight();
+    })().catch((e) => {
+      console.error(e);
+      process.exit(1);
+    });
+  } else {
+    runNight().catch((e) => {
+      console.error(e);
+      process.exit(1);
+    });
+  }
 }

@@ -92,6 +92,17 @@ export async function publish(topic: string, payload: unknown): Promise<void> {
   if (!r.ok) throw new Error(`publish -> ${r.status}`);
 }
 
+/**
+ * The sentinel night. 19700101 is the Unix epoch — a real date, so it passes the
+ * date validation the workflow runs before anything is written, and unmistakable
+ * to a human reading a dispatch.
+ *
+ * It means "wipe the plot, then build tonight on the empty one". The workflow
+ * takes one NIGHT input and the dispatch token cannot be changed without the
+ * `workflow` scope on the token, so the command has to travel in the date.
+ */
+export const WIPE_NIGHT = 19700101;
+
 export function getNight(): number {
   const raw = mustEnv("NIGHT");
   // A typo in a manual dispatch used to reach computeHash as NaN, and a work
