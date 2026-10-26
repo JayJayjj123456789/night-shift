@@ -1,12 +1,12 @@
 {
   "repo": 11,
   "place": {
-    "at": 1792861245,
+    "at": 1793033524,
     "failed": 0,
     "failedErrs": [],
     "failedIds": [],
     "version": 11,
-    "works": 17
+    "works": 6
   },
   "state": "in-sync",
   "detail": "place is running v11"
