@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <rect width="512" height="512" fill="#111"/>
+    <circle cx="269" cy="336" r="8" fill="#f59e0b"/><rect x="292" y="333" width="6" height="6" fill="#f59e0b" transform="rotate(45, 295, 336)"/><rect x="266" y="359" width="6" height="6" fill="#f59e0b" transform="rotate(135, 269, 362)"/><rect x="240" y="333" width="6" height="6" fill="#f59e0b" transform="rotate(225, 243, 336)"/><rect x="266" y="307" width="6" height="6" fill="#f59e0b" transform="rotate(315, 269, 310)"/>
+    <text x="8" y="500" fill="#888" font-size="10">n20261028-c · machine night bright</text>
+  </svg>
