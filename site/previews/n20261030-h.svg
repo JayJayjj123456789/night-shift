@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <rect width="512" height="512" fill="#111"/>
+    <circle cx="113" cy="438" r="8" fill="#f59e0b"/><rect x="136" y="435" width="6" height="6" fill="#f59e0b" transform="rotate(45, 139, 438)"/><rect x="110" y="461" width="6" height="6" fill="#f59e0b" transform="rotate(135, 113, 464)"/><rect x="84" y="435" width="6" height="6" fill="#f59e0b" transform="rotate(225, 87, 438)"/><rect x="110" y="409" width="6" height="6" fill="#f59e0b" transform="rotate(315, 113, 412)"/>
+    <text x="8" y="500" fill="#888" font-size="10">n20261030-h · deep night gate</text>
+  </svg>

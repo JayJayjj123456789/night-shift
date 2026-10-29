@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <rect width="512" height="512" fill="#111"/>
+    <circle cx="409" cy="320" r="8" fill="#f59e0b"/><rect x="432" y="317" width="6" height="6" fill="#f59e0b" transform="rotate(45, 435, 320)"/><rect x="406" y="343" width="6" height="6" fill="#f59e0b" transform="rotate(135, 409, 346)"/><rect x="380" y="317" width="6" height="6" fill="#f59e0b" transform="rotate(225, 383, 320)"/><rect x="406" y="291" width="6" height="6" fill="#f59e0b" transform="rotate(315, 409, 294)"/>
+    <text x="8" y="500" fill="#888" font-size="10">n20261030-a · cold night star</text>
+  </svg>

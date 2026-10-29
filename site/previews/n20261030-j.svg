@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <rect width="512" height="512" fill="#111"/>
+    <circle cx="200" cy="320" r="8" fill="#f59e0b"/><rect x="223" y="317" width="6" height="6" fill="#f59e0b" transform="rotate(45, 226, 320)"/><rect x="205.03444185374863" y="341.727469423674" width="6" height="6" fill="#f59e0b" transform="rotate(117, 208.03444185374863, 344.727469423674)"/><rect x="175.96555814625137" y="332.2824165596043" width="6" height="6" fill="#f59e0b" transform="rotate(189, 178.96555814625137, 335.2824165596043)"/><rect x="175.96555814625137" y="301.7175834403957" width="6" height="6" fill="#f59e0b" transform="rotate(261, 178.96555814625137, 304.7175834403957)"/><rect x="205.03444185374863" y="292.272530576326" width="6" height="6" fill="#f59e0b" transform="rotate(333, 208.03444185374863, 295.272530576326)"/>
+    <text x="8" y="500" fill="#888" font-size="10">n20261030-j · quiet night stone</text>
+  </svg>
