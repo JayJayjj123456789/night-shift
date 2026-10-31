@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <rect width="512" height="512" fill="#111"/>
+    <circle cx="256" cy="106" r="8" fill="#f59e0b"/><rect x="279" y="103" width="6" height="6" fill="#f59e0b" transform="rotate(45, 282, 106)"/><rect x="253" y="129" width="6" height="6" fill="#f59e0b" transform="rotate(135, 256, 132)"/><rect x="227" y="103" width="6" height="6" fill="#f59e0b" transform="rotate(225, 230, 106)"/><rect x="253" y="77" width="6" height="6" fill="#f59e0b" transform="rotate(315, 256, 80)"/>
+    <text x="8" y="500" fill="#888" font-size="10">n20261101-e · new night river</text>
+  </svg>
