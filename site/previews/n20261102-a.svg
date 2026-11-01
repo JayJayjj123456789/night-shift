@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <rect width="512" height="512" fill="#111"/>
+    <circle cx="256" cy="506" r="8" fill="#f59e0b"/><rect x="279" y="503" width="6" height="6" fill="#f59e0b" transform="rotate(45, 282, 506)"/><rect x="261.03444185374866" y="527.7274694236739" width="6" height="6" fill="#f59e0b" transform="rotate(117, 264.03444185374866, 530.7274694236739)"/><rect x="231.96555814625137" y="518.2824165596043" width="6" height="6" fill="#f59e0b" transform="rotate(189, 234.96555814625137, 521.2824165596043)"/><rect x="231.96555814625137" y="487.7175834403957" width="6" height="6" fill="#f59e0b" transform="rotate(261, 234.96555814625137, 490.7175834403957)"/><rect x="261.0344418537486" y="478.272530576326" width="6" height="6" fill="#f59e0b" transform="rotate(333, 264.0344418537486, 481.272530576326)"/>
+    <text x="8" y="500" fill="#888" font-size="10">n20261102-a · deep night river</text>
+  </svg>
