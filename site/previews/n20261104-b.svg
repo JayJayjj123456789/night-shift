@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <rect width="512" height="512" fill="#111"/>
+    <circle cx="256.0" cy="6.0" r="1.2" fill="#9a4b2b" opacity="0.5"/><circle cx="256.0" cy="-24.0" r="10.0" fill="#9a4b2b"/><circle cx="256.0" cy="6.0" r="1.2" fill="#e0a33a" opacity="0.5"/><circle cx="256.0" cy="-40.0" r="6.0" fill="#e0a33a"/><circle cx="256.0" cy="-46.0" r="3" fill="#fff" opacity="0.85"/><circle cx="256.0" cy="6.0" r="1.2" fill="#3f9e7a" opacity="0.5"/><rect x="241.0" y="-9.0" width="30.0" height="10.0" fill="#3f9e7a"/>
+    <text x="8" y="500" fill="#888" font-size="10">n20261104-b · soft night river</text>
+  </svg>
