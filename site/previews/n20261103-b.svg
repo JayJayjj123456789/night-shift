@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <rect width="512" height="512" fill="#111"/>
+    <circle cx="76" cy="506" r="8" fill="#f59e0b"/><rect x="99" y="503" width="6" height="6" fill="#f59e0b" transform="rotate(45, 102, 506)"/><rect x="73" y="529" width="6" height="6" fill="#f59e0b" transform="rotate(135, 76, 532)"/><rect x="47" y="503" width="6" height="6" fill="#f59e0b" transform="rotate(225, 50, 506)"/><rect x="73" y="477" width="6" height="6" fill="#f59e0b" transform="rotate(315, 76, 480)"/>
+    <text x="8" y="500" fill="#888" font-size="10">n20261103-b · deep night gear</text>
+  </svg>
