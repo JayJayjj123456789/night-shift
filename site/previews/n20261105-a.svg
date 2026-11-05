@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <rect width="512" height="512" fill="#111"/>
+    <circle cx="6" cy="186" r="8" fill="#f59e0b"/><rect x="29" y="183" width="6" height="6" fill="#f59e0b" transform="rotate(45, 32, 186)"/><rect x="3.0000000000000018" y="209" width="6" height="6" fill="#f59e0b" transform="rotate(135, 6.000000000000002, 212)"/><rect x="-23" y="183" width="6" height="6" fill="#f59e0b" transform="rotate(225, -20, 186)"/><rect x="2.9999999999999956" y="157" width="6" height="6" fill="#f59e0b" transform="rotate(315, 5.999999999999996, 160)"/>
+    <text x="8" y="500" fill="#888" font-size="10">n20261105-a · rain night gear</text>
+  </svg>
